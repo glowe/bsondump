@@ -15,7 +15,6 @@ where
     while let Ok(deserialized) = bson::Document::from_reader(&mut reader) {
         write!(&mut writer, "{}\n", deserialized)?;
     }
-    writer.flush()?;
     Ok(())
 }
 
@@ -31,8 +30,84 @@ where
             serde_json::to_string_pretty(&deserialized).unwrap()
         )?;
     }
-    writer.flush()?;
     Ok(())
+}
+
+const INDENT_SPACES: usize = 4;
+
+fn debug_array<W>(mut writer: &mut W, elements: &Vec<bson::Bson>, indent: usize) -> io::Result<u32>
+where
+    W: io::Write,
+{
+    let mut num_objects = 0;
+    write!(
+        &mut writer,
+        "{spacer:indent$}--- new object ---\n",
+        spacer = " ",
+        indent = indent * INDENT_SPACES
+    )?;
+    let indent = indent + 1;
+    for element in elements {
+        // We can't get size without raw bson, but the bson crate doesn't support raw bson yet.
+        write!(
+            &mut writer,
+            "{spacer:indent$}type: {type:?}\n",
+            spacer=" ",
+            indent=indent * INDENT_SPACES,
+            type=element.element_type(),
+        )?;
+        num_objects += 1;
+        match element {
+            bson::Bson::Document(inner) => {
+                num_objects += debug_document(writer, &inner, indent + 1)?;
+            }
+            bson::Bson::Array(inner) => {
+                num_objects += debug_array(writer, &inner, indent + 1)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(num_objects)
+}
+
+fn debug_document<W>(
+    mut writer: &mut W,
+    document: &bson::Document,
+    indent: usize,
+) -> io::Result<u32>
+where
+    W: io::Write,
+{
+    let mut num_objects = 0;
+    write!(
+        &mut writer,
+        "{spacer:indent$}--- new object ---\n",
+        spacer = " ",
+        indent = indent * INDENT_SPACES
+    )?;
+    for (name, element) in document {
+        // We can't get size without raw bson, but the bson crate doesn't support raw bson yet.
+        write!(
+            &mut writer,
+            "{spacer:indent$}{name}\n{spacer:double_indent$}type: {type:?}\n",
+            spacer=" ",
+            indent=indent*INDENT_SPACES,
+            name=name,
+            double_indent=(indent+1)*INDENT_SPACES,
+            type=element.element_type(),
+        )?;
+        num_objects += 1;
+        match element {
+            bson::Bson::Document(inner) => {
+                num_objects += debug_document(writer, inner, indent + 1)?;
+            }
+            bson::Bson::Array(inner) => {
+                num_objects += debug_array(writer, inner, indent + 1)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(num_objects)
 }
 
 fn dump_debug<R, W>(mut reader: R, mut writer: W) -> io::Result<()>
@@ -41,17 +116,10 @@ where
     W: io::Write,
 {
     let mut num_objects = 0;
-    while let Ok(deserialized) = bson::Document::from_reader(&mut reader) {
-        let element = bson::Bson::from(&deserialized);
-        // TODO: verify that casting to an integer matches whats in the spec.
-        // If not, then we need a translation table
-        //
-        write!(&mut writer, "type = {}\n", element.element_type() as u8)?;
-        num_objects += 1;
+    while let Ok(document) = bson::Document::from_reader(&mut reader) {
+        num_objects += debug_document(&mut writer, &document, 1)?;
     }
     write!(&mut writer, "{} objects found", num_objects)?;
-
-    writer.flush()?;
     Ok(())
 }
 
@@ -65,6 +133,7 @@ where
         OutputType::PrettyJson => dump_pretty_json(&mut reader, &mut writer)?,
         OutputType::Debug => dump_debug(&mut reader, &mut writer)?,
     }
+    writer.flush()?;
     Ok(())
 }
 
