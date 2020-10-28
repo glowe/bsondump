@@ -51,10 +51,10 @@ where
         // We can't get size without raw bson, but the bson crate doesn't support raw bson yet.
         write!(
             &mut writer,
-            "{spacer:indent$}type: {type:?}\n",
+            "{spacer:indent$}type: {type}\n",
             spacer=" ",
             indent=indent * INDENT_SPACES,
-            type=element.element_type(),
+            type=element.element_type() as u8,
         )?;
         num_objects += 1;
         match element {
@@ -89,12 +89,12 @@ where
         // We can't get size without raw bson, but the bson crate doesn't support raw bson yet.
         write!(
             &mut writer,
-            "{spacer:indent$}{name}\n{spacer:double_indent$}type: {type:?}\n",
+            "{spacer:indent$}{name}\n{spacer:double_indent$}type: {type}\n",
             spacer=" ",
-            indent=indent*INDENT_SPACES,
+            indent=indent * INDENT_SPACES,
             name=name,
-            double_indent=(indent+1)*INDENT_SPACES,
-            type=element.element_type(),
+            double_indent=(indent + 1) * INDENT_SPACES,
+            type=element.element_type() as u8,
         )?;
         num_objects += 1;
         match element {
