@@ -1,5 +1,5 @@
-use clap::{App, Arg};
-use serde_json;
+use clap::App;
+use clap::Arg;
 use std::error;
 use std::fmt;
 use std::fs;
@@ -7,135 +7,7 @@ use std::io;
 use std::result;
 use std::str;
 
-fn dump_json<R, W>(mut reader: R, mut writer: W) -> io::Result<()>
-where
-    R: io::Read,
-    W: io::Write,
-{
-    while let Ok(deserialized) = bson::Document::from_reader(&mut reader) {
-        write!(&mut writer, "{}\n", deserialized)?;
-    }
-    Ok(())
-}
-
-fn dump_pretty_json<R, W>(mut reader: R, mut writer: W) -> io::Result<()>
-where
-    R: io::BufRead,
-    W: io::Write,
-{
-    while let Ok(deserialized) = bson::Document::from_reader(&mut reader) {
-        write!(
-            &mut writer,
-            "{}\n",
-            serde_json::to_string_pretty(&deserialized).unwrap()
-        )?;
-    }
-    Ok(())
-}
-
-const INDENT_SPACES: usize = 4;
-
-fn debug_array<W>(mut writer: &mut W, elements: &Vec<bson::Bson>, indent: usize) -> io::Result<u32>
-where
-    W: io::Write,
-{
-    let mut num_objects = 0;
-    write!(
-        &mut writer,
-        "{spacer:indent$}--- new object ---\n",
-        spacer = " ",
-        indent = indent * INDENT_SPACES
-    )?;
-    let indent = indent + 1;
-    for element in elements {
-        // We can't get size without raw bson, but the bson crate doesn't support raw bson yet.
-        write!(
-            &mut writer,
-            "{spacer:indent$}type: {type}\n",
-            spacer=" ",
-            indent=indent * INDENT_SPACES,
-            type=element.element_type() as u8,
-        )?;
-        num_objects += 1;
-        match element {
-            bson::Bson::Document(inner) => {
-                num_objects += debug_document(writer, &inner, indent + 1)?;
-            }
-            bson::Bson::Array(inner) => {
-                num_objects += debug_array(writer, &inner, indent + 1)?;
-            }
-            _ => {}
-        }
-    }
-    Ok(num_objects)
-}
-
-fn debug_document<W>(
-    mut writer: &mut W,
-    document: &bson::Document,
-    indent: usize,
-) -> io::Result<u32>
-where
-    W: io::Write,
-{
-    let mut num_objects = 0;
-    write!(
-        &mut writer,
-        "{spacer:indent$}--- new object ---\n",
-        spacer = " ",
-        indent = indent * INDENT_SPACES
-    )?;
-    for (name, element) in document {
-        // We can't get size without raw bson, but the bson crate doesn't support raw bson yet.
-        write!(
-            &mut writer,
-            "{spacer:indent$}{name}\n{spacer:double_indent$}type: {type}\n",
-            spacer=" ",
-            indent=indent * INDENT_SPACES,
-            name=name,
-            double_indent=(indent + 1) * INDENT_SPACES,
-            type=element.element_type() as u8,
-        )?;
-        num_objects += 1;
-        match element {
-            bson::Bson::Document(inner) => {
-                num_objects += debug_document(writer, inner, indent + 1)?;
-            }
-            bson::Bson::Array(inner) => {
-                num_objects += debug_array(writer, inner, indent + 1)?;
-            }
-            _ => {}
-        }
-    }
-    Ok(num_objects)
-}
-
-fn dump_debug<R, W>(mut reader: R, mut writer: W) -> io::Result<()>
-where
-    R: io::BufRead,
-    W: io::Write,
-{
-    let mut num_objects = 0;
-    while let Ok(document) = bson::Document::from_reader(&mut reader) {
-        num_objects += debug_document(&mut writer, &document, 1)?;
-    }
-    write!(&mut writer, "{} objects found", num_objects)?;
-    Ok(())
-}
-
-fn dump<R, W>(output_type: OutputType, mut reader: R, mut writer: W) -> io::Result<()>
-where
-    R: io::BufRead,
-    W: io::Write,
-{
-    match output_type {
-        OutputType::Json => dump_json(&mut reader, &mut writer)?,
-        OutputType::PrettyJson => dump_pretty_json(&mut reader, &mut writer)?,
-        OutputType::Debug => dump_debug(&mut reader, &mut writer)?,
-    }
-    writer.flush()?;
-    Ok(())
-}
+mod bsondump;
 
 const DEBUG: &'static str = "debug";
 const JSON: &'static str = "json";
@@ -217,7 +89,7 @@ See http://docs.mongodb.org/manual/reference/program/bsondump/ for more informat
         .get_matches();
 
     let bsonfile = matches.value_of("bsonFile");
-    let mut reader: Box<dyn io::BufRead> = match bsonfile {
+    let reader: Box<dyn io::BufRead> = match bsonfile {
         None => Box::new(io::BufReader::new(io::stdin())),
         Some(path) => {
             let file = fs::File::open(path)?;
@@ -226,7 +98,7 @@ See http://docs.mongodb.org/manual/reference/program/bsondump/ for more informat
     };
 
     let outfile = matches.value_of("outFile");
-    let mut writer: Box<dyn io::Write> = match outfile {
+    let writer: Box<dyn io::Write> = match outfile {
         None => Box::new(std::io::stdout()), // If someone chose stdio, they probably want to see results sooner.
         Some(path) => {
             let file = fs::File::create(path)?;
@@ -238,6 +110,11 @@ See http://docs.mongodb.org/manual/reference/program/bsondump/ for more informat
     let output_type_arg = matches.value_of("type").unwrap_or(DEFAULT_OUTPUT_TYPE);
     let output_type =
         str::FromStr::from_str(output_type_arg).expect("output type was already validated by clap");
-    dump(output_type, &mut reader, &mut writer)?;
+    let dump = bsondump::BsonDump::new(reader, writer);
+    match output_type {
+        OutputType::Json => dump.json()?,
+        OutputType::PrettyJson => dump.pretty_json()?,
+        OutputType::Debug => dump.debug()?,
+    }
     Ok(())
 }
