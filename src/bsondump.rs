@@ -50,7 +50,11 @@ where
 
     fn debug_array(&mut self, elements: &Vec<bson::Bson>, indent_level: usize) -> io::Result<u32> {
         let mut num_objects = 0;
-        write!(&mut self.writer, "{}--- new object ---\n", get_indent(indent_level))?;
+        write!(
+            &mut self.writer,
+            "{}--- new object ---\n",
+            get_indent(indent_level)
+        )?;
         for element in elements {
             // We can't get size without raw bson, but the bson crate doesn't support raw bson yet.
             write!(
@@ -59,15 +63,10 @@ where
                 indent=get_indent(indent_level + 2),
                 type=element.element_type() as u8,
             )?;
-            num_objects += 1;
-            match element {
-                bson::Bson::Document(inner) => {
-                    num_objects += self.debug_document(&inner, indent_level + 3)?;
-                }
-                bson::Bson::Array(inner) => {
-                    num_objects += self.debug_array(&inner, indent_level + 3)?;
-                }
-                _ => {}
+            num_objects += 1 + match element {
+                bson::Bson::Document(inner) => self.debug_document(&inner, indent_level + 3)?,
+                bson::Bson::Array(inner) => self.debug_array(&inner, indent_level + 3)?,
+                _ => 0,
             }
         }
         Ok(num_objects)
@@ -79,9 +78,15 @@ where
         indent_level: usize,
     ) -> io::Result<u32> {
         let mut num_objects = 0;
-        write!(&mut self.writer, "{}--- new object ---\n", get_indent(indent_level))?;
+        write!(
+            &mut self.writer,
+            "{}--- new object ---\n",
+            get_indent(indent_level)
+        )?;
         for (name, element) in document {
             // We can't get size without raw bson, but the bson crate doesn't support raw bson yet.
+            // TODO: implement rawbson for this. This may eliminate the need to have separate debug
+            // document and array methods.
             write!(
                 &mut self.writer,
                 "{indent}{name}\n",
@@ -94,15 +99,10 @@ where
                 indent=get_indent(indent_level + 2),
                 type=element.element_type() as u8,
             )?;
-            num_objects += 1;
-            match element {
-                bson::Bson::Document(inner) => {
-                    num_objects += self.debug_document(inner, indent_level + 3)?;
-                }
-                bson::Bson::Array(inner) => {
-                    num_objects += self.debug_array(inner, indent_level + 3)?;
-                }
-                _ => {}
+            num_objects += 1 + match element {
+                bson::Bson::Document(inner) => self.debug_document(inner, indent_level + 3)?,
+                bson::Bson::Array(inner) => self.debug_array(inner, indent_level + 3)?,
+                _ => 0,
             }
         }
         Ok(num_objects)
