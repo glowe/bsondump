@@ -19,8 +19,9 @@ where
     }
 
     pub fn json(mut self) -> io::Result<()> {
+        // bson::RawDocument::from_bytes
         while let Ok(deserialized) = bson::Document::from_reader(&mut self.reader) {
-            write!(&mut self.writer, "{}\n", deserialized)?;
+            writeln!(&mut self.writer, "{}", deserialized)?;
         }
         self.writer.flush()?;
         Ok(())
@@ -28,9 +29,9 @@ where
 
     pub fn pretty_json(mut self) -> io::Result<()> {
         while let Ok(deserialized) = bson::Document::from_reader(&mut self.reader) {
-            write!(
+            writeln!(
                 &mut self.writer,
-                "{}\n",
+                "{}",
                 serde_json::to_string_pretty(&deserialized).unwrap()
             )?;
         }
@@ -41,7 +42,7 @@ where
     pub fn debug(mut self) -> io::Result<()> {
         let mut num_objects = 0;
         while let Ok(document) = bson::Document::from_reader(&mut self.reader) {
-            num_objects += self.debug_document(&document, 1)?;
+            num_objects += self.debug_document(&document, 0)?;
         }
         write!(&mut self.writer, "{} objects found", num_objects)?;
         self.writer.flush()?;
@@ -50,22 +51,22 @@ where
 
     fn debug_array(&mut self, elements: &Vec<bson::Bson>, indent_level: usize) -> io::Result<u32> {
         let mut num_objects = 0;
-        write!(
+        writeln!(
             &mut self.writer,
-            "{}--- new object ---\n",
+            "{}--- new object ---",
             get_indent(indent_level)
         )?;
         for element in elements {
             // We can't get size without raw bson, but the bson crate doesn't support raw bson yet.
-            write!(
+            writeln!(
                 &mut self.writer,
-                "{indent}type: {type}\n",
+                "{indent}type: {type}",
                 indent=get_indent(indent_level + 2),
                 type=element.element_type() as u8,
             )?;
             num_objects += 1 + match element {
-                bson::Bson::Document(inner) => self.debug_document(&inner, indent_level + 3)?,
-                bson::Bson::Array(inner) => self.debug_array(&inner, indent_level + 3)?,
+                bson::Bson::Document(inner) => self.debug_document(inner, indent_level + 3)?,
+                bson::Bson::Array(inner) => self.debug_array(inner, indent_level + 3)?,
                 _ => 0,
             }
         }
@@ -78,24 +79,24 @@ where
         indent_level: usize,
     ) -> io::Result<u32> {
         let mut num_objects = 0;
-        write!(
+        writeln!(
             &mut self.writer,
-            "{}--- new object ---\n",
+            "{}--- new object ---",
             get_indent(indent_level)
         )?;
         for (name, element) in document {
             // We can't get size without raw bson, but the bson crate doesn't support raw bson yet.
             // TODO: implement rawbson for this. This may eliminate the need to have separate debug
             // document and array methods.
-            write!(
+            writeln!(
                 &mut self.writer,
-                "{indent}{name}\n",
+                "{indent}{name}",
                 indent = get_indent(indent_level + 1),
                 name = name,
             )?;
-            write!(
+            writeln!(
                 &mut self.writer,
-                "{indent}type: {type}\n",
+                "{indent}type: {type}",
                 indent=get_indent(indent_level + 2),
                 type=element.element_type() as u8,
             )?;
