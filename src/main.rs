@@ -9,10 +9,10 @@ use std::str;
 
 mod bsondump;
 
-const DEBUG: &'static str = "debug";
-const JSON: &'static str = "json";
-const PRETTY_JSON: &'static str = "prettyJson";
-const DEFAULT_OUTPUT_TYPE: &'static str = JSON;
+const DEBUG: &str = "debug";
+const JSON: &str = "json";
+const PRETTY_JSON: &str = "prettyJson";
+const DEFAULT_OUTPUT_TYPE: &str = JSON;
 
 enum OutputType {
     Debug,
@@ -48,9 +48,8 @@ impl str::FromStr for OutputType {
     }
 }
 
-fn main() -> io::Result<()> {
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // TODO:
-    // - implement debug
     // - if the bson is invalid, spit out error
     // - implement objcheck
     // - create a struct and use App to populate it properly
