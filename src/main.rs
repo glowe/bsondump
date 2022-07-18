@@ -69,7 +69,7 @@ See http://docs.mongodb.org/manual/reference/program/bsondump/ for more informat
                 .long("type")
                 .possible_values(&[DEBUG, JSON, PRETTY_JSON])
                 .takes_value(true)
-                .help(&format!(
+                .help(&*format!(
                     "type of output (default '{}')",
                     DEFAULT_OUTPUT_TYPE
                 )),
