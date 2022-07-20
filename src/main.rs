@@ -50,7 +50,6 @@ impl str::FromStr for OutputType {
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // TODO:
-    // - implement debug
     // - if the bson is invalid, spit out error
     // - implement objcheck
     // - create a struct and use App to populate it properly
