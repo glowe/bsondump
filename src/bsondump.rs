@@ -32,12 +32,18 @@ impl RawSize for RawDocument {
     }
 }
 
+impl RawSize for RawArray {
+    fn get_raw_size(&self) -> usize {
+        self.as_bytes().len()
+    }
+}
+
 impl RawSize for bson::RawBsonRef<'_> {
     fn get_raw_size(&self) -> usize {
         match self {
             RawBsonRef::Double(_) => 8,
             RawBsonRef::String(string) => string.get_raw_size(),
-            RawBsonRef::Array(raw_array) => raw_array.as_bytes().len(),
+            RawBsonRef::Array(raw_array) => raw_array.get_raw_size(),
             RawBsonRef::Document(raw_document) => raw_document.get_raw_size(),
             RawBsonRef::Boolean(_) => 1,
             RawBsonRef::Null => 0,
@@ -122,9 +128,9 @@ where
         Ok(())
     }
 
-    fn debug_array(
+    fn write_new_object_header(
         &mut self,
-        array: &RawArray,
+        object: &(impl RawSize + ?Sized),
         indent_level: usize,
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         writeln!(
@@ -132,21 +138,57 @@ where
             "{}--- new object ---",
             get_indent(indent_level)
         )?;
-        for element in array {
-            let element = element?;
-            writeln!(
-                &mut self.writer,
-                "{indent}type: {type}",
-                indent=get_indent(indent_level + 2),
-                type=element.element_type() as u8,
-            )?;
-            match element {
-                RawBsonRef::Document(embedded) => {
-                    self.debug_document(embedded, indent_level + 3)?
-                }
-                RawBsonRef::Array(array) => self.debug_array(array, indent_level + 3)?,
-                _ => (),
-            };
+        writeln!(
+            &mut self.writer,
+            "{indent}size : {size}",
+            indent = get_indent(indent_level + 1),
+            size = object.get_raw_size(),
+        )?;
+        Ok(())
+    }
+
+    fn debug_item(
+        &mut self,
+        name: &str,
+        bson_ref: &RawBsonRef,
+        indent_level: usize,
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        writeln!(
+            &mut self.writer,
+            "{indent}{name}",
+            indent = get_indent(indent_level + 2),
+            name = name,
+        )?;
+
+        let size_of_type = 1usize;
+        let size_of_name = name.len() + 1; // null terminator
+        let size = size_of_type + size_of_name + bson_ref.get_raw_size();
+
+        writeln!(
+            &mut self.writer,
+            "{indent}type: {type:>4} size: {size}",
+            indent = get_indent(indent_level + 3),
+            type = bson_ref.element_type() as u8,
+            size = size
+        )?;
+        match bson_ref {
+            RawBsonRef::Document(embedded) => self.debug_document(embedded, indent_level + 3)?,
+            RawBsonRef::Array(embedded) => self.debug_array(embedded, indent_level + 3)?,
+            _ => (),
+        };
+        Ok(())
+    }
+
+    fn debug_array(
+        &mut self,
+        array: &RawArray,
+        indent_level: usize,
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        self.write_new_object_header(array, indent_level)?;
+        for (i, element) in array.into_iter().enumerate() {
+            let bson_ref = element?;
+            let name = format!("{}", i);
+            self.debug_item(&name, &bson_ref, indent_level)?;
         }
         Ok(())
     }
@@ -156,46 +198,10 @@ where
         raw_document: &RawDocument,
         indent_level: usize,
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        writeln!(
-            &mut self.writer,
-            "{}--- new object ---",
-            get_indent(indent_level)
-        )?;
-
-        writeln!(
-            &mut self.writer,
-            "{indent}size : {size}",
-            indent = get_indent(indent_level + 1),
-            size = raw_document.as_bytes().len()
-        )?;
-
-        for element in raw_document {
+        self.write_new_object_header(raw_document, indent_level)?;
+        for element in raw_document.into_iter() {
             let (name, bson_ref) = element?;
-            writeln!(
-                &mut self.writer,
-                "{indent}{name}",
-                indent = get_indent(indent_level + 2),
-                name = name,
-            )?;
-
-            let size_of_type = 1usize;
-            let size_of_name = name.len() + 1; // null terminator
-            let size = size_of_type + size_of_name + bson_ref.get_raw_size();
-
-            writeln!(
-                &mut self.writer,
-                "{indent}type: {type} size: {size}",
-                indent = get_indent(indent_level + 3),
-                type = bson_ref.element_type() as u8,
-                size =size
-            )?;
-            match bson_ref {
-                RawBsonRef::Document(embedded) => {
-                    self.debug_document(embedded, indent_level + 3)?
-                }
-                RawBsonRef::Array(embedded) => self.debug_array(embedded, indent_level + 3)?,
-                _ => (),
-            };
+            self.debug_item(name, &bson_ref, indent_level)?;
         }
         Ok(())
     }
