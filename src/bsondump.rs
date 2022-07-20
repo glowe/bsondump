@@ -1,22 +1,9 @@
 use std::io;
 
-use bson::Bson;
-use bson::Document;
-use bson::RawDocumentBuf;
+use bson::RawArray;
+use bson::RawBsonRef;
+use bson::RawDocument;
 
-/*
-enum DebugBsonValue {
-    Atom {
-        element_type: bson::spec::ElementType,
-        length: u32,
-    },
-    Composite {
-        element_type: bson::spec::ElementType,
-        length: u32,
-        elements: Vec<DebugBsonValue>,
-    },
-}
- */
 pub struct BsonDump<R: io::Read, W: io::Write> {
     reader: R,
     writer: W,
@@ -32,65 +19,48 @@ trait RawSize {
 
 const I32_BYTES: usize = 4;
 
-impl RawSize for bson::Bson {
+impl RawSize for &str {
+    fn get_raw_size(&self) -> usize {
+        // i32 size + characters + null terminator
+        I32_BYTES + self.len() + 1
+    }
+}
+
+impl RawSize for RawDocument {
+    fn get_raw_size(&self) -> usize {
+        self.as_bytes().len()
+    }
+}
+
+impl RawSize for bson::RawBsonRef<'_> {
     fn get_raw_size(&self) -> usize {
         match self {
-            Bson::Array(array) => array.get_raw_size(),
-            Bson::Binary(binary) => I32_BYTES + 1 + binary.bytes.len(),
-            Bson::Boolean(_) => 1,
-            Bson::DateTime(_ts) => 8,
-            Bson::DbPointer(_) => String::from("").get_raw_size() + 12,
-            Bson::Decimal128(dec) => dec.bytes().len(),
-            Bson::Document(doc) => doc.get_raw_size(),
-            Bson::Double(_) => 8,
-            Bson::Int32(_) => 4,
-            Bson::Int64(_) => 8,
-            Bson::JavaScriptCode(code) => code.get_raw_size(),
-            Bson::String(string) => string.get_raw_size(),
-            Bson::Null => 0,
-            Bson::RegularExpression(regex) => {
+            RawBsonRef::Double(_) => 8,
+            RawBsonRef::String(string) => string.get_raw_size(),
+            RawBsonRef::Array(raw_array) => raw_array.as_bytes().len(),
+            RawBsonRef::Document(raw_document) => raw_document.get_raw_size(),
+            RawBsonRef::Boolean(_) => 1,
+            RawBsonRef::Null => 0,
+            RawBsonRef::RegularExpression(regex) => {
                 regex.pattern.get_raw_size() + regex.options.get_raw_size()
             }
-            Bson::JavaScriptCodeWithScope(code_with_scope) => {
-                I32_BYTES
-                    + code_with_scope.code.get_raw_size()
-                    + code_with_scope.scope.get_raw_size()
+            RawBsonRef::JavaScriptCode(code) => code.get_raw_size(),
+            RawBsonRef::JavaScriptCodeWithScope(cws) => {
+                cws.code.get_raw_size() + cws.scope.get_raw_size()
             }
-            Bson::Timestamp(_) => 8,
-            Bson::ObjectId(_) => 12,
-            Bson::Symbol(symbol) => symbol.get_raw_size(),
-            Bson::Undefined => 0,
-            Bson::MaxKey => 0,
-            Bson::MinKey => 0,
+            RawBsonRef::Int32(_) => 4,
+            RawBsonRef::Int64(_) => 8,
+            RawBsonRef::Timestamp(_) => 8,
+            RawBsonRef::Binary(_) => todo!(),
+            RawBsonRef::ObjectId(_) => 12,
+            RawBsonRef::DateTime(_) => 8,
+            RawBsonRef::Symbol(symbol) => symbol.get_raw_size(),
+            RawBsonRef::Decimal128(dec) => dec.bytes().len(),
+            RawBsonRef::Undefined => 0,
+            RawBsonRef::MaxKey => 0,
+            RawBsonRef::MinKey => 0,
+            RawBsonRef::DbPointer(_) => "".get_raw_size() + 12,
         }
-    }
-}
-
-impl RawSize for &String {
-    fn get_raw_size(&self) -> usize {
-        // i32 size + characters + null terminator
-        I32_BYTES + self.len() + 1
-    }
-}
-
-impl RawSize for String {
-    fn get_raw_size(&self) -> usize {
-        // i32 size + characters + null terminator
-        I32_BYTES + self.len() + 1
-    }
-}
-
-impl RawSize for Document {
-    fn get_raw_size(&self) -> usize {
-        let raw_doc_buf = RawDocumentBuf::from_document(self)
-            .expect("Unable to create RawDocumentBuf from Document");
-        raw_doc_buf.as_bytes().len()
-    }
-}
-
-impl RawSize for &Vec<Bson> {
-    fn get_raw_size(&self) -> usize {
-        self.iter().fold(0, |acc, elem| acc + elem.get_raw_size())
     }
 }
 
@@ -123,43 +93,69 @@ where
         Ok(())
     }
 
-    pub fn debug(mut self) -> io::Result<()> {
+    pub fn debug(mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let mut num_objects = 0;
-        while let Ok(document) = Document::from_reader(&mut self.reader) {
-            num_objects += self.debug_document(&document, 0)?;
+
+        loop {
+            let mut buf: [u8; 4] = [0, 0, 0, 0];
+            if let Err(error) = self.reader.read_exact(&mut buf) {
+                if let std::io::ErrorKind::UnexpectedEof = error.kind() {
+                    break;
+                } else {
+                    return Err(Box::new(error));
+                }
+            }
+            let length = i32::from_le_bytes(buf) as usize;
+
+            let mut remainder = vec![0u8; length - buf.len()];
+            self.reader.read_exact(&mut remainder)?;
+
+            let mut bytes = Vec::from(buf);
+            bytes.append(&mut remainder);
+            let raw_document = RawDocument::from_bytes(&bytes)?;
+            self.debug_document(raw_document, 0)?;
+            num_objects += 1;
         }
+
         write!(&mut self.writer, "{} objects found", num_objects)?;
         self.writer.flush()?;
         Ok(())
     }
 
-    fn debug_array(&mut self, elements: &Vec<Bson>, indent_level: usize) -> io::Result<u32> {
-        let mut num_objects = 0;
+    fn debug_array(
+        &mut self,
+        array: &RawArray,
+        indent_level: usize,
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         writeln!(
             &mut self.writer,
             "{}--- new object ---",
             get_indent(indent_level)
         )?;
-        for element in elements {
-            // We can't get size without raw bson, but the bson crate doesn't support raw bson yet.
+        for element in array {
+            let element = element?;
             writeln!(
                 &mut self.writer,
                 "{indent}type: {type}",
                 indent=get_indent(indent_level + 2),
                 type=element.element_type() as u8,
             )?;
-            num_objects += 1 + match element {
-                Bson::Document(inner) => self.debug_document(inner, indent_level + 3)?,
-                Bson::Array(inner) => self.debug_array(inner, indent_level + 3)?,
-                _ => 0,
-            }
+            match element {
+                RawBsonRef::Document(embedded) => {
+                    self.debug_document(embedded, indent_level + 3)?
+                }
+                RawBsonRef::Array(array) => self.debug_array(array, indent_level + 3)?,
+                _ => (),
+            };
         }
-        Ok(num_objects)
+        Ok(())
     }
 
-    fn debug_document(&mut self, document: &Document, indent_level: usize) -> io::Result<u32> {
-        let mut num_objects = 0;
-
+    fn debug_document(
+        &mut self,
+        raw_document: &RawDocument,
+        indent_level: usize,
+    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         writeln!(
             &mut self.writer,
             "{}--- new object ---",
@@ -170,10 +166,11 @@ where
             &mut self.writer,
             "{indent}size : {size}",
             indent = get_indent(indent_level + 1),
-            size = document.get_raw_size()
+            size = raw_document.as_bytes().len()
         )?;
 
-        for (name, element) in document {
+        for element in raw_document {
+            let (name, bson_ref) = element?;
             writeln!(
                 &mut self.writer,
                 "{indent}{name}",
@@ -183,21 +180,23 @@ where
 
             let size_of_type = 1usize;
             let size_of_name = name.len() + 1; // null terminator
-            let size = size_of_type + size_of_name + element.get_raw_size();
+            let size = size_of_type + size_of_name + bson_ref.get_raw_size();
 
             writeln!(
                 &mut self.writer,
                 "{indent}type: {type} size: {size}",
                 indent = get_indent(indent_level + 3),
-                type = element.element_type() as u8,
+                type = bson_ref.element_type() as u8,
                 size =size
             )?;
-            num_objects += 1 + match element {
-                Bson::Document(inner) => self.debug_document(inner, indent_level + 3)?,
-                Bson::Array(inner) => self.debug_array(inner, indent_level + 3)?,
-                _ => 0,
-            }
+            match bson_ref {
+                RawBsonRef::Document(embedded) => {
+                    self.debug_document(embedded, indent_level + 3)?
+                }
+                RawBsonRef::Array(embedded) => self.debug_array(embedded, indent_level + 3)?,
+                _ => (),
+            };
         }
-        Ok(num_objects)
+        Ok(())
     }
 }

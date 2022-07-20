@@ -48,7 +48,7 @@ impl str::FromStr for OutputType {
     }
 }
 
-fn main() -> io::Result<()> {
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // TODO:
     // - implement debug
     // - if the bson is invalid, spit out error
