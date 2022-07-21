@@ -8,20 +8,32 @@ use bson::RawBsonRef;
 use bson::RawDocument;
 use bson::RawDocumentBuf;
 
+use serde::ser::Serialize;
+
 #[derive(Debug)]
 pub struct BsonDumpError {
-    pub num_found: u32,
-    pub message: String,
+    num_found: u32,
+    message: String,
+}
+
+impl BsonDumpError {
+    pub fn get_num_found(&self) -> u32 {
+        self.num_found
+    }
+    pub fn get_message(&self) -> &str {
+        self.message.as_ref()
+    }
 }
 
 pub struct BsonDump<R: Read, W: Write> {
     reader: R,
     writer: W,
     objcheck: bool,
+    num_found: u32,
 }
 
 fn get_indent(indent_level: usize) -> String {
-    " ".repeat(indent_level * 8)
+    "\t".repeat(indent_level)
 }
 
 trait CountBytes {
@@ -79,6 +91,23 @@ impl CountBytes for bson::RawBsonRef<'_> {
     }
 }
 
+fn pretty_json(value: &serde_json::value::Value, indent: &[u8]) -> Result<String, Box<dyn Error>> {
+    let buf = Vec::new();
+    let formatter = serde_json::ser::PrettyFormatter::with_indent(indent);
+    let mut ser = serde_json::Serializer::with_formatter(buf, formatter);
+    value.serialize(&mut ser)?;
+    let writer = ser.into_inner();
+    let json = String::from_utf8(writer)?;
+    Ok(json)
+}
+
+fn to_canonical_extjson(
+    document: &bson::Document,
+) -> Result<serde_json::value::Value, Box<dyn Error>> {
+    let bson_document = bson::to_bson(&document)?;
+    Ok(bson_document.into_canonical_extjson())
+}
+
 impl<R, W> BsonDump<R, W>
 where
     R: Read,
@@ -89,151 +118,86 @@ where
             reader,
             writer,
             objcheck,
+            num_found: 0,
         }
     }
 
     pub fn json(mut self) -> Result<u32, BsonDumpError> {
-        let mut num_found = 0;
-        loop {
-            match self.next_raw_document_buf() {
-                Err(error) => {
-                    return Err(BsonDumpError {
-                        num_found,
-                        message: error.to_string(),
-                    });
-                }
-                Ok(raw_document_buf) => match raw_document_buf {
-                    Some(raw_document_buf) => {
-                        let document = match raw_document_buf.to_document() {
-                            Ok(document) => document,
-                            Err(error) => {
-                                if self.objcheck {
-                                    return Err(BsonDumpError {
-                                        num_found,
-                                        message: error.to_string(),
-                                    });
-                                }
-                                continue;
-                            }
-                        };
-
-                        if let Err(error) = writeln!(&mut self.writer, "{}", document) {
-                            return Err(BsonDumpError {
-                                num_found,
-                                message: error.to_string(),
-                            });
-                        }
-                    }
-                    None => {
-                        break;
-                    }
-                },
-            }
-            num_found += 1;
-        }
-        if let Err(error) = self.writer.flush() {
+        if let Err(error) = self.print_json(false) {
             return Err(BsonDumpError {
-                num_found,
+                num_found: self.num_found,
                 message: error.to_string(),
             });
         }
-        Ok(num_found)
+        Ok(self.num_found)
+    }
+
+    fn print_json(&mut self, is_pretty: bool) -> Result<(), Box<dyn Error>> {
+        self.num_found = 0;
+        loop {
+            let raw_document_buf = self.next_raw_document_buf()?;
+            if raw_document_buf.is_none() {
+                break;
+            }
+            let document = match raw_document_buf.unwrap().to_document() {
+                Err(error) => {
+                    if !self.objcheck {
+                        continue;
+                    }
+                    return Err(Box::new(error));
+                }
+                Ok(document) => document,
+            };
+            let json = to_canonical_extjson(&document)?;
+
+            if !is_pretty {
+                writeln!(&mut self.writer, "{}", json)?;
+            } else {
+                writeln!(&mut self.writer, "{}", pretty_json(&json, b"\t")?)?;
+            }
+            self.num_found += 1;
+        }
+        self.writer.flush()?;
+        Ok(())
     }
 
     pub fn pretty_json(mut self) -> Result<u32, BsonDumpError> {
-        let mut num_found = 0;
-        loop {
-            match self.next_raw_document_buf() {
-                Err(error) => {
-                    return Err(BsonDumpError {
-                        num_found,
-                        message: error.to_string(),
-                    })
-                }
-                Ok(raw_document_buf) => match raw_document_buf {
-                    Some(raw_document_buf) => {
-                        let document = match raw_document_buf.to_document() {
-                            Ok(document) => document,
-                            Err(error) => {
-                                if self.objcheck {
-                                    return Err(BsonDumpError {
-                                        num_found,
-                                        message: error.to_string(),
-                                    });
-                                }
-                                continue;
-                            }
-                        };
-
-                        let pretty_json = match serde_json::to_string_pretty(&document) {
-                            Ok(pretty_json) => pretty_json,
-                            Err(error) => {
-                                return Err(BsonDumpError {
-                                    num_found,
-                                    message: error.to_string(),
-                                });
-                            }
-                        };
-
-                        if let Err(error) = writeln!(&mut self.writer, "{}", pretty_json) {
-                            return Err(BsonDumpError {
-                                num_found,
-                                message: error.to_string(),
-                            });
-                        }
-                    }
-                    None => {
-                        break;
-                    }
-                },
-            }
-            num_found += 1;
-        }
-        if let Err(error) = self.writer.flush() {
+        if let Err(error) = self.print_json(true) {
             return Err(BsonDumpError {
-                num_found,
+                num_found: self.num_found,
                 message: error.to_string(),
             });
         }
-        Ok(num_found)
+        Ok(self.num_found)
     }
 
     pub fn debug(mut self) -> Result<u32, BsonDumpError> {
-        let mut num_found = 0;
-        loop {
-            match self.next_raw_document_buf() {
-                Ok(raw_document_buf) => match raw_document_buf {
-                    Some(raw_document_buf) => {
-                        if let Err(error) = self.debug_document(&raw_document_buf, 0) {
-                            if self.objcheck {
-                                return Err(BsonDumpError {
-                                    num_found,
-                                    message: error.to_string(),
-                                });
-                            }
-                            continue;
-                        }
-                    }
-                    None => {
-                        break;
-                    }
-                },
-                Err(error) => {
-                    return Err(BsonDumpError {
-                        num_found,
-                        message: error.to_string(),
-                    })
-                }
-            }
-            num_found += 1;
-        }
-        if let Err(error) = self.writer.flush() {
+        if let Err(error) = self.print_debug() {
             return Err(BsonDumpError {
-                num_found,
+                num_found: self.num_found,
                 message: error.to_string(),
             });
         }
-        Ok(num_found)
+        Ok(self.num_found)
+    }
+
+    pub fn print_debug(&mut self) -> Result<(), Box<dyn Error>> {
+        self.num_found = 0;
+        loop {
+            let raw_document_buf = self.next_raw_document_buf()?;
+            if raw_document_buf.is_none() {
+                break;
+            }
+            if let Err(error) = self.debug_document(&raw_document_buf.unwrap(), 0) {
+                if !self.objcheck {
+                    continue;
+                }
+                return Err(error);
+            };
+            self.num_found += 1;
+        }
+        self.writer.flush()?;
+        Ok(())
     }
 
     fn next_raw_document_buf(

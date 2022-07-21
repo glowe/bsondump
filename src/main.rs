@@ -8,6 +8,8 @@ use std::result;
 use std::str;
 
 use chrono::offset::Local;
+use chrono::DateTime;
+use chrono::TimeZone;
 
 mod bsondump;
 
@@ -48,6 +50,18 @@ impl str::FromStr for OutputType {
             }),
         }
     }
+}
+
+fn print_num_found<Tz>(start: DateTime<Tz>, num_found: u32)
+where
+    Tz: TimeZone,
+    <Tz as TimeZone>::Offset: std::fmt::Display,
+{
+    eprintln!(
+        "{start}    {num_found} objects found",
+        start = start.format("%+"),
+        num_found = num_found
+    );
 }
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -111,52 +125,26 @@ See http://docs.mongodb.org/manual/reference/program/bsondump/ for more informat
         }
     };
 
-    // TODO: These base strings should be static constants
     let output_type_arg = matches.value_of("type").unwrap_or(DEFAULT_OUTPUT_TYPE);
     let output_type =
         str::FromStr::from_str(output_type_arg).expect("output type was already validated by clap");
     let objcheck = matches.is_present("objcheck");
     let dump = bsondump::BsonDump::new(reader, writer, objcheck);
     let start = Local::now();
-    let num_found;
-    let mut err = None;
-    match output_type {
-        OutputType::Json => match dump.json() {
-            Err(bsondump_error) => {
-                num_found = bsondump_error.num_found;
-                err = Some(bsondump_error.message);
-            }
-            Ok(found) => {
-                num_found = found;
-            }
-        },
-        OutputType::PrettyJson => match dump.pretty_json() {
-            Err(bsondump_error) => {
-                num_found = bsondump_error.num_found;
-                err = Some(bsondump_error.message);
-            }
-            Ok(found) => {
-                num_found = found;
-            }
-        },
-        OutputType::Debug => match dump.debug() {
-            Err(bsondump_error) => {
-                num_found = bsondump_error.num_found;
-                err = Some(bsondump_error.message);
-            }
-            Ok(found) => {
-                num_found = found;
-            }
-        },
+    let debug_result = match output_type {
+        OutputType::Json => dump.json(),
+        OutputType::PrettyJson => dump.pretty_json(),
+        OutputType::Debug => dump.debug(),
     };
-
-    eprintln!(
-        "{start}    {num_found} objects found",
-        start = start.format("%+"),
-        num_found = num_found
-    );
-
-    err.map(|e| eprintln!("{}", e));
+    match debug_result {
+        Err(error) => {
+            print_num_found(start, error.get_num_found());
+            eprintln!("{}", error.get_message());
+        }
+        Ok(num_found) => {
+            print_num_found(start, num_found);
+        }
+    };
 
     Ok(())
 }
