@@ -52,8 +52,6 @@ impl str::FromStr for OutputType {
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // TODO:
-    // - if the bson is invalid, spit out error
-    // - implement objcheck
     // - create a struct and use App to populate it properly
     //   See https://www.fpcomplete.com/rust/command-line-parsing-clap/
     // - refactor main into helper functions
@@ -77,7 +75,7 @@ See http://docs.mongodb.org/manual/reference/program/bsondump/ for more informat
         )
         .arg(
             Arg::with_name("objcheck")
-                .long("objCheck")
+                .long("objcheck")
                 .takes_value(false)
                 .help("validate BSON during processing"),
         )
