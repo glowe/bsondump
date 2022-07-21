@@ -17,6 +17,7 @@ pub struct BsonDumpError {
 pub struct BsonDump<R: Read, W: Write> {
     reader: R,
     writer: W,
+    objcheck: bool,
 }
 
 fn get_indent(indent_level: usize) -> String {
@@ -83,8 +84,12 @@ where
     R: Read,
     W: Write,
 {
-    pub fn new(reader: R, writer: W) -> Self {
-        BsonDump { reader, writer }
+    pub fn new(reader: R, writer: W, objcheck: bool) -> Self {
+        BsonDump {
+            reader,
+            writer,
+            objcheck,
+        }
     }
 
     pub fn json(mut self) -> Result<u32, BsonDumpError> {
@@ -95,17 +100,20 @@ where
                     return Err(BsonDumpError {
                         num_found,
                         message: error.to_string(),
-                    })
+                    });
                 }
                 Ok(raw_document_buf) => match raw_document_buf {
                     Some(raw_document_buf) => {
                         let document = match raw_document_buf.to_document() {
                             Ok(document) => document,
                             Err(error) => {
-                                return Err(BsonDumpError {
-                                    num_found,
-                                    message: error.to_string(),
-                                });
+                                if self.objcheck {
+                                    return Err(BsonDumpError {
+                                        num_found,
+                                        message: error.to_string(),
+                                    });
+                                }
+                                continue;
                             }
                         };
 
@@ -147,10 +155,13 @@ where
                         let document = match raw_document_buf.to_document() {
                             Ok(document) => document,
                             Err(error) => {
-                                return Err(BsonDumpError {
-                                    num_found,
-                                    message: error.to_string(),
-                                });
+                                if self.objcheck {
+                                    return Err(BsonDumpError {
+                                        num_found,
+                                        message: error.to_string(),
+                                    });
+                                }
+                                continue;
                             }
                         };
 
@@ -194,10 +205,13 @@ where
                 Ok(raw_document_buf) => match raw_document_buf {
                     Some(raw_document_buf) => {
                         if let Err(error) = self.debug_document(&raw_document_buf, 0) {
-                            return Err(BsonDumpError {
-                                num_found,
-                                message: error.to_string(),
-                            });
+                            if self.objcheck {
+                                return Err(BsonDumpError {
+                                    num_found,
+                                    message: error.to_string(),
+                                });
+                            }
+                            continue;
                         }
                     }
                     None => {

@@ -76,6 +76,12 @@ See http://docs.mongodb.org/manual/reference/program/bsondump/ for more informat
                 )),
         )
         .arg(
+            Arg::with_name("objcheck")
+                .long("objCheck")
+                .takes_value(false)
+                .help("validate BSON during processing"),
+        )
+        .arg(
             Arg::with_name("bsonFile")
                 .long("bsonFile")
                 .takes_value(true)
@@ -111,47 +117,43 @@ See http://docs.mongodb.org/manual/reference/program/bsondump/ for more informat
     let output_type_arg = matches.value_of("type").unwrap_or(DEFAULT_OUTPUT_TYPE);
     let output_type =
         str::FromStr::from_str(output_type_arg).expect("output type was already validated by clap");
-    let dump = bsondump::BsonDump::new(reader, writer);
+    let objcheck = matches.is_present("objcheck");
+    let dump = bsondump::BsonDump::new(reader, writer, objcheck);
     let start = Local::now();
     let num_found;
     let mut err = None;
     match output_type {
-        OutputType::Json => {
-            match dump.json() {
-                Err(bsondump_error) => {
-                    num_found = bsondump_error.num_found;
-                    err = Some(bsondump_error.message);
-                },
-                Ok(found) => {
-                    num_found = found;
-                }
+        OutputType::Json => match dump.json() {
+            Err(bsondump_error) => {
+                num_found = bsondump_error.num_found;
+                err = Some(bsondump_error.message);
+            }
+            Ok(found) => {
+                num_found = found;
             }
         },
-        OutputType::PrettyJson => {
-            match dump.pretty_json() {
-                Err(bsondump_error) => {
-                    num_found = bsondump_error.num_found;
-                    err = Some(bsondump_error.message);
-                },
-                Ok(found) => {
-                    num_found = found;
-                }
+        OutputType::PrettyJson => match dump.pretty_json() {
+            Err(bsondump_error) => {
+                num_found = bsondump_error.num_found;
+                err = Some(bsondump_error.message);
+            }
+            Ok(found) => {
+                num_found = found;
             }
         },
-        OutputType::Debug => {
-            match dump.debug() {
-                Err(bsondump_error) => {
-                    num_found = bsondump_error.num_found;
-                    err = Some(bsondump_error.message);
-                },
-                Ok(found) => {
-                    num_found = found;
-                }
+        OutputType::Debug => match dump.debug() {
+            Err(bsondump_error) => {
+                num_found = bsondump_error.num_found;
+                err = Some(bsondump_error.message);
+            }
+            Ok(found) => {
+                num_found = found;
             }
         },
     };
 
-    eprintln!("{start}    {num_found} objects found",
+    eprintln!(
+        "{start}    {num_found} objects found",
         start = start.format("%+"),
         num_found = num_found
     );
