@@ -8,7 +8,11 @@ use bson::RawBsonRef;
 use bson::RawDocument;
 use bson::RawDocumentBuf;
 
-use chrono::offset::Local;
+#[derive(Debug)]
+pub struct BsonDumpError {
+    pub num_found: u32,
+    pub message: String,
+}
 
 pub struct BsonDump<R: Read, W: Write> {
     reader: R,
@@ -83,43 +87,139 @@ where
         BsonDump { reader, writer }
     }
 
-    pub fn json(mut self) -> Result<(), Box<dyn Error>> {
-        while let Some(raw_document_buf) = self.next_raw_document_buf()? {
-            let document = raw_document_buf.to_document()?;
-            writeln!(&mut self.writer, "{}", document)?;
+    pub fn json(mut self) -> Result<u32, BsonDumpError> {
+        let mut num_found = 0;
+        loop {
+            match self.next_raw_document_buf() {
+                Err(error) => {
+                    return Err(BsonDumpError {
+                        num_found,
+                        message: error.to_string(),
+                    })
+                }
+                Ok(raw_document_buf) => match raw_document_buf {
+                    Some(raw_document_buf) => {
+                        let document = match raw_document_buf.to_document() {
+                            Ok(document) => document,
+                            Err(error) => {
+                                return Err(BsonDumpError {
+                                    num_found,
+                                    message: error.to_string(),
+                                });
+                            }
+                        };
+
+                        if let Err(error) = writeln!(&mut self.writer, "{}", document) {
+                            return Err(BsonDumpError {
+                                num_found,
+                                message: error.to_string(),
+                            });
+                        }
+                    }
+                    None => {
+                        break;
+                    }
+                },
+            }
+            num_found += 1;
         }
-        self.writer.flush()?;
-        Ok(())
+        if let Err(error) = self.writer.flush() {
+            return Err(BsonDumpError {
+                num_found,
+                message: error.to_string(),
+            });
+        }
+        Ok(num_found)
     }
 
-    pub fn pretty_json(mut self) -> Result<(), Box<dyn Error>> {
-        while let Some(raw_document_buf) = self.next_raw_document_buf()? {
-            let document = raw_document_buf.to_document()?;
-            writeln!(
-                &mut self.writer,
-                "{}",
-                serde_json::to_string_pretty(&document)?
-            )?;
+    pub fn pretty_json(mut self) -> Result<u32, BsonDumpError> {
+        let mut num_found = 0;
+        loop {
+            match self.next_raw_document_buf() {
+                Err(error) => {
+                    return Err(BsonDumpError {
+                        num_found,
+                        message: error.to_string(),
+                    })
+                }
+                Ok(raw_document_buf) => match raw_document_buf {
+                    Some(raw_document_buf) => {
+                        let document = match raw_document_buf.to_document() {
+                            Ok(document) => document,
+                            Err(error) => {
+                                return Err(BsonDumpError {
+                                    num_found,
+                                    message: error.to_string(),
+                                });
+                            }
+                        };
+
+                        let pretty_json = match serde_json::to_string_pretty(&document) {
+                            Ok(pretty_json) => pretty_json,
+                            Err(error) => {
+                                return Err(BsonDumpError {
+                                    num_found,
+                                    message: error.to_string(),
+                                });
+                            }
+                        };
+
+                        if let Err(error) = writeln!(&mut self.writer, "{}", pretty_json) {
+                            return Err(BsonDumpError {
+                                num_found,
+                                message: error.to_string(),
+                            });
+                        }
+                    }
+                    None => {
+                        break;
+                    }
+                },
+            }
+            num_found += 1;
         }
-        self.writer.flush()?;
-        Ok(())
+        if let Err(error) = self.writer.flush() {
+            return Err(BsonDumpError {
+                num_found,
+                message: error.to_string(),
+            });
+        }
+        Ok(num_found)
     }
 
-    pub fn debug(mut self) -> Result<(), Box<dyn Error>> {
-        let start = Local::now();
-        let mut num_objects = 0;
-        while let Some(raw_document_buf) = self.next_raw_document_buf()? {
-            self.debug_document(&raw_document_buf, 0)?;
-            num_objects += 1;
+    pub fn debug(mut self) -> Result<u32, BsonDumpError> {
+        let mut num_found = 0;
+        loop {
+            match self.next_raw_document_buf() {
+                Ok(raw_document_buf) => match raw_document_buf {
+                    Some(raw_document_buf) => {
+                        if let Err(error) = self.debug_document(&raw_document_buf, 0) {
+                            return Err(BsonDumpError {
+                                num_found,
+                                message: error.to_string(),
+                            });
+                        }
+                    }
+                    None => {
+                        break;
+                    }
+                },
+                Err(error) => {
+                    return Err(BsonDumpError {
+                        num_found,
+                        message: error.to_string(),
+                    })
+                }
+            }
+            num_found += 1;
         }
-        write!(
-            &mut self.writer,
-            "{start}    {num_objects} objects found",
-            start = start.format("%+"),
-            num_objects = num_objects
-        )?;
-        self.writer.flush()?;
-        Ok(())
+        if let Err(error) = self.writer.flush() {
+            return Err(BsonDumpError {
+                num_found,
+                message: error.to_string(),
+            });
+        }
+        Ok(num_found)
     }
 
     fn next_raw_document_buf(
