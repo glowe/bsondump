@@ -132,16 +132,16 @@ where
             if raw_document_buf.is_none() {
                 break;
             }
-            let document = match raw_document_buf.unwrap().to_document() {
+            let value = match bson::to_bson(&raw_document_buf.unwrap()) {
                 Err(error) => {
                     if !self.objcheck {
                         continue;
                     }
                     return Err(Box::new(error));
                 }
-                Ok(document) => document,
+                Ok(value) => value,
             };
-            let json = bson::to_bson(&document)?.into_canonical_extjson();
+            let json = value.into_canonical_extjson();
 
             if !is_pretty {
                 writeln!(&mut self.writer, "{}", json)?;
