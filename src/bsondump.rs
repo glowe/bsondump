@@ -188,7 +188,7 @@ where
             if raw_document_buf.is_none() {
                 break;
             }
-            if let Err(error) = self.debug_document(&raw_document_buf.unwrap(), 0) {
+            if let Err(error) = self.print_debug_document(&raw_document_buf.unwrap(), 0) {
                 if !self.objcheck {
                     continue;
                 }
@@ -221,7 +221,7 @@ where
         Ok(Some(RawDocumentBuf::from_bytes(bytes)?))
     }
 
-    fn write_new_object_header(
+    fn print_new_object_header(
         &mut self,
         object: &(impl CountBytes + ?Sized),
         indent_level: usize,
@@ -240,7 +240,7 @@ where
         Ok(())
     }
 
-    fn debug_item(
+    fn print_debug_item(
         &mut self,
         name: &str,
         bson_ref: &RawBsonRef,
@@ -263,32 +263,38 @@ where
             size = size
         )?;
         match bson_ref {
-            RawBsonRef::Document(embedded) => self.debug_document(embedded, indent_level + 3)?,
-            RawBsonRef::Array(embedded) => self.debug_array(embedded, indent_level + 3)?,
+            RawBsonRef::Document(embedded) => {
+                self.print_debug_document(embedded, indent_level + 3)?
+            }
+            RawBsonRef::Array(embedded) => self.print_debug_array(embedded, indent_level + 3)?,
             _ => (),
         };
         Ok(())
     }
 
-    fn debug_array(&mut self, array: &RawArray, indent_level: usize) -> Result<(), Box<dyn Error>> {
-        self.write_new_object_header(array, indent_level)?;
+    fn print_debug_array(
+        &mut self,
+        array: &RawArray,
+        indent_level: usize,
+    ) -> Result<(), Box<dyn Error>> {
+        self.print_new_object_header(array, indent_level)?;
         for (i, element) in array.into_iter().enumerate() {
             let bson_ref = element?;
             let name = format!("{}", i);
-            self.debug_item(&name, &bson_ref, indent_level)?;
+            self.print_debug_item(&name, &bson_ref, indent_level)?;
         }
         Ok(())
     }
 
-    fn debug_document(
+    fn print_debug_document(
         &mut self,
         raw_document: &RawDocument,
         indent_level: usize,
     ) -> Result<(), Box<dyn Error>> {
-        self.write_new_object_header(raw_document, indent_level)?;
+        self.print_new_object_header(raw_document, indent_level)?;
         for element in raw_document.into_iter() {
             let (name, bson_ref) = element?;
-            self.debug_item(name, &bson_ref, indent_level)?;
+            self.print_debug_item(name, &bson_ref, indent_level)?;
         }
         Ok(())
     }
