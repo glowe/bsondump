@@ -101,13 +101,6 @@ fn pretty_json(value: &serde_json::value::Value, indent: &[u8]) -> Result<String
     Ok(json)
 }
 
-fn to_canonical_extjson(
-    document: &bson::Document,
-) -> Result<serde_json::value::Value, Box<dyn Error>> {
-    let bson_document = bson::to_bson(&document)?;
-    Ok(bson_document.into_canonical_extjson())
-}
-
 impl<R, W> BsonDump<R, W>
 where
     R: Read,
@@ -148,7 +141,7 @@ where
                 }
                 Ok(document) => document,
             };
-            let json = to_canonical_extjson(&document)?;
+            let json = bson::to_bson(&document)?.into_canonical_extjson();
 
             if !is_pretty {
                 writeln!(&mut self.writer, "{}", json)?;
