@@ -181,7 +181,7 @@ where
         Ok(self.num_found)
     }
 
-    pub fn print_debug(&mut self) -> Result<(), Box<dyn Error>> {
+    fn print_debug(&mut self) -> Result<(), Box<dyn Error>> {
         self.num_found = 0;
         loop {
             let raw_document_buf = self.next_raw_document_buf()?;
