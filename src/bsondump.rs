@@ -166,7 +166,7 @@ where {
     fn print_json(&mut self, is_pretty: bool) -> Result<(), Box<dyn Error>> {
         self.num_found = 0;
         for raw_document_buf in raw_document_bufs(&mut self.reader) {
-            let value = match bson::to_bson(&raw_document_buf.unwrap()) {
+            let value = match bson::to_bson(&raw_document_buf?) {
                 Err(error) => {
                     if !self.objcheck {
                         continue;
@@ -213,7 +213,7 @@ where {
         self.num_found = 0;
         for raw_document_buf in raw_document_bufs(&mut self.reader) {
             if let Err(error) =
-                Self::print_debug_document(&mut self.writer, &raw_document_buf.unwrap(), 0)
+                Self::print_debug_document(&mut self.writer, &raw_document_buf?, 0)
             {
                 if !self.objcheck {
                     continue;
