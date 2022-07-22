@@ -10,6 +10,10 @@ use bson::RawDocumentBuf;
 
 use serde::ser::Serialize;
 
+use serde_json::ser::PrettyFormatter;
+use serde_json::value::Value;
+use serde_json::Serializer;
+
 #[derive(Debug)]
 pub struct BsonDumpError {
     num_found: u32,
@@ -25,16 +29,15 @@ impl BsonDumpError {
     }
 }
 
-pub struct RawDocumentRefs<'reader, R: Read> {
+pub struct RawDocumentBufs<'reader, R: Read> {
     reader: &'reader mut R,
 }
 
-
-fn raw_document_refs<R: Read>(reader: & mut R) -> RawDocumentRefs<R> {
-    RawDocumentRefs { reader }
+fn raw_document_bufs<R: Read>(reader: &mut R) -> RawDocumentBufs<R> {
+    RawDocumentBufs { reader }
 }
 
-impl<'r, R: Read> std::iter::Iterator for RawDocumentRefs<'r, R> {
+impl<'r, R: Read> std::iter::Iterator for RawDocumentBufs<'r, R> {
     type Item = Result<RawDocumentBuf, Box<dyn Error>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -151,22 +154,19 @@ impl<R: Read, W: Write> BsonDump<R, W> {
 
     fn print_pretty_json(
         writer: &mut W,
-        value: serde_json::value::Value,
+        value: Value,
         indent: &[u8],
     ) -> Result<(), serde_json::Error>
 where {
-        let formatter = serde_json::ser::PrettyFormatter::with_indent(indent);
-        let mut ser = serde_json::Serializer::with_formatter(writer, formatter);
+        let formatter = PrettyFormatter::with_indent(indent);
+        let mut ser = Serializer::with_formatter(writer, formatter);
         value.serialize(&mut ser)
     }
 
     fn print_json(&mut self, is_pretty: bool) -> Result<(), Box<dyn Error>> {
         self.num_found = 0;
-        for raw_document_buf in raw_document_refs(&mut self.reader) {
-            let options = bson::ser::SerializerOptions::builder()
-                .human_readable(false)
-                .build();
-            let value = match bson::to_bson_with_options(&raw_document_buf.unwrap(), options) {
+        for raw_document_buf in raw_document_bufs(&mut self.reader) {
+            let value = match bson::to_bson(&raw_document_buf.unwrap()) {
                 Err(error) => {
                     if !self.objcheck {
                         continue;
@@ -211,7 +211,7 @@ where {
 
     fn print_debug(&mut self) -> Result<(), Box<dyn Error>> {
         self.num_found = 0;
-        for raw_document_buf in raw_document_refs(&mut self.reader) {
+        for raw_document_buf in raw_document_bufs(&mut self.reader) {
             if let Err(error) =
                 Self::print_debug_document(&mut self.writer, &raw_document_buf.unwrap(), 0)
             {
