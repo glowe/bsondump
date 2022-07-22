@@ -11,7 +11,9 @@ use chrono::offset::Local;
 use chrono::DateTime;
 use chrono::TimeZone;
 
-mod bsondump;
+use crate::bsondump::BsonDump;
+
+pub mod bsondump;
 
 const DEBUG: &str = "debug";
 const JSON: &str = "json";
@@ -127,7 +129,7 @@ See http://docs.mongodb.org/manual/reference/program/bsondump/ for more informat
     let output_type =
         str::FromStr::from_str(output_type_arg).expect("output type was already validated by clap");
     let objcheck = matches.is_present("objcheck");
-    let dump = bsondump::BsonDump::new(reader, writer, objcheck);
+    let dump = BsonDump::new(reader, writer, objcheck);
     let start = Local::now();
     let debug_result = match output_type {
         OutputType::Json => dump.json(),
