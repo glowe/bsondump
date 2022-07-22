@@ -25,11 +25,42 @@ impl BsonDumpError {
     }
 }
 
-pub struct BsonDump<R: Read, W: Write> {
-    reader: R,
-    writer: W,
-    objcheck: bool,
-    num_found: u32,
+pub struct RawDocumentRefs<'reader, R: Read> {
+    reader: &'reader mut R,
+}
+
+
+fn raw_document_refs<R: Read>(reader: & mut R) -> RawDocumentRefs<R> {
+    RawDocumentRefs { reader }
+}
+
+impl<'r, R: Read> std::iter::Iterator for RawDocumentRefs<'r, R> {
+    type Item = Result<RawDocumentBuf, Box<dyn Error>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut buf: [u8; 4] = [0, 0, 0, 0];
+        if let Err(error) = self.reader.read_exact(&mut buf) {
+            if let std::io::ErrorKind::UnexpectedEof = error.kind() {
+                return None;
+            } else {
+                return Some(Err(Box::new(error)));
+            }
+        }
+        let length = i32::from_le_bytes(buf) as usize;
+
+        let mut remainder = vec![0u8; length - buf.len()];
+        if let Err(error) = self.reader.read_exact(&mut remainder) {
+            return Some(Err(Box::new(error)));
+        }
+
+        let mut bytes = Vec::from(buf);
+        bytes.append(&mut remainder);
+
+        match RawDocumentBuf::from_bytes(bytes) {
+            Ok(raw_document_buf) => Some(Ok(raw_document_buf)),
+            Err(error) => Some(Err(Box::new(error))),
+        }
+    }
 }
 
 fn get_indent(indent_level: usize) -> String {
@@ -91,11 +122,14 @@ impl CountBytes for bson::RawBsonRef<'_> {
     }
 }
 
-impl<R, W> BsonDump<R, W>
-where
-    R: Read,
-    W: Write,
-{
+pub struct BsonDump<R: Read, W: Write> {
+    reader: R,
+    writer: W,
+    objcheck: bool,
+    num_found: u32,
+}
+
+impl<R: Read, W: Write> BsonDump<R, W> {
     pub fn new(reader: R, writer: W, objcheck: bool) -> Self {
         BsonDump {
             reader,
@@ -116,27 +150,22 @@ where
     }
 
     fn print_pretty_json(
-        &mut self,
+        writer: &mut W,
         value: serde_json::value::Value,
         indent: &[u8],
     ) -> Result<(), serde_json::Error>
-    where
-    {
+where {
         let formatter = serde_json::ser::PrettyFormatter::with_indent(indent);
-        let mut ser = serde_json::Serializer::with_formatter(&mut self.writer, formatter);
+        let mut ser = serde_json::Serializer::with_formatter(writer, formatter);
         value.serialize(&mut ser)
     }
 
-    fn print_json(&mut self, is_pretty: bool) -> Result<(), Box<dyn Error>>
-    {
+    fn print_json(&mut self, is_pretty: bool) -> Result<(), Box<dyn Error>> {
         self.num_found = 0;
-        loop {
-            let raw_document_buf = self.next_raw_document_buf()?;
-            if raw_document_buf.is_none() {
-                break;
-            }
-
-            let options = bson::ser::SerializerOptions::builder().human_readable(false).build();
+        for raw_document_buf in raw_document_refs(&mut self.reader) {
+            let options = bson::ser::SerializerOptions::builder()
+                .human_readable(false)
+                .build();
             let value = match bson::to_bson_with_options(&raw_document_buf.unwrap(), options) {
                 Err(error) => {
                     if !self.objcheck {
@@ -150,7 +179,7 @@ where
             let extjson = value.into_canonical_extjson();
 
             if is_pretty {
-                self.print_pretty_json(extjson, b"\t")?;
+                Self::print_pretty_json(&mut self.writer, extjson, b"\t")?;
             } else {
                 writeln!(&mut self.writer, "{}", extjson)?;
             }
@@ -182,12 +211,10 @@ where
 
     fn print_debug(&mut self) -> Result<(), Box<dyn Error>> {
         self.num_found = 0;
-        loop {
-            let raw_document_buf = self.next_raw_document_buf()?;
-            if raw_document_buf.is_none() {
-                break;
-            }
-            if let Err(error) = self.print_debug_document(&raw_document_buf.unwrap(), 0) {
+        for raw_document_buf in raw_document_refs(&mut self.reader) {
+            if let Err(error) =
+                Self::print_debug_document(&mut self.writer, &raw_document_buf.unwrap(), 0)
+            {
                 if !self.objcheck {
                     continue;
                 }
@@ -199,39 +226,14 @@ where
         Ok(())
     }
 
-    fn next_raw_document_buf(
-        &mut self,
-    ) -> std::result::Result<Option<RawDocumentBuf>, Box<dyn Error>> {
-        let mut buf: [u8; 4] = [0, 0, 0, 0];
-        if let Err(error) = self.reader.read_exact(&mut buf) {
-            if let std::io::ErrorKind::UnexpectedEof = error.kind() {
-                return Ok(None);
-            } else {
-                return Err(Box::new(error));
-            }
-        }
-        let length = i32::from_le_bytes(buf) as usize;
-
-        let mut remainder = vec![0u8; length - buf.len()];
-        self.reader.read_exact(&mut remainder)?;
-
-        let mut bytes = Vec::from(buf);
-        bytes.append(&mut remainder);
-        Ok(Some(RawDocumentBuf::from_bytes(bytes)?))
-    }
-
     fn print_new_object_header(
-        &mut self,
+        writer: &mut W,
         object: &(impl CountBytes + ?Sized),
         indent_level: usize,
     ) -> Result<(), Box<dyn Error>> {
+        writeln!(writer, "{}--- new object ---", get_indent(indent_level))?;
         writeln!(
-            &mut self.writer,
-            "{}--- new object ---",
-            get_indent(indent_level)
-        )?;
-        writeln!(
-            &mut self.writer,
+            writer,
             "{indent}size : {size}",
             indent = get_indent(indent_level + 1),
             size = object.count_bytes(),
@@ -240,13 +242,13 @@ where
     }
 
     fn print_debug_item(
-        &mut self,
+        writer: &mut W,
         name: &str,
         bson_ref: &RawBsonRef,
         indent_level: usize,
     ) -> Result<(), Box<dyn Error>> {
         writeln!(
-            &mut self.writer,
+            writer,
             "{indent}{name}",
             indent = get_indent(indent_level + 2),
             name = name,
@@ -255,7 +257,7 @@ where
         let size_of_name = name.len() + 1; // null terminator
         let size = size_of_type + size_of_name + bson_ref.count_bytes();
         writeln!(
-            &mut self.writer,
+            writer,
             "{indent}type: {type:>4} size: {size}",
             indent = get_indent(indent_level + 3),
             type = bson_ref.element_type() as u8,
@@ -263,37 +265,39 @@ where
         )?;
         match bson_ref {
             RawBsonRef::Document(embedded) => {
-                self.print_debug_document(embedded, indent_level + 3)?
+                Self::print_debug_document(writer, embedded, indent_level + 3)?
             }
-            RawBsonRef::Array(embedded) => self.print_debug_array(embedded, indent_level + 3)?,
+            RawBsonRef::Array(embedded) => {
+                Self::print_debug_array(writer, embedded, indent_level + 3)?
+            }
             _ => (),
         };
         Ok(())
     }
 
     fn print_debug_array(
-        &mut self,
+        writer: &mut W,
         array: &RawArray,
         indent_level: usize,
     ) -> Result<(), Box<dyn Error>> {
-        self.print_new_object_header(array, indent_level)?;
+        Self::print_new_object_header(writer, array, indent_level)?;
         for (i, element) in array.into_iter().enumerate() {
             let bson_ref = element?;
             let name = format!("{}", i);
-            self.print_debug_item(&name, &bson_ref, indent_level)?;
+            Self::print_debug_item(writer, &name, &bson_ref, indent_level)?;
         }
         Ok(())
     }
 
     fn print_debug_document(
-        &mut self,
+        writer: &mut W,
         raw_document: &RawDocument,
         indent_level: usize,
     ) -> Result<(), Box<dyn Error>> {
-        self.print_new_object_header(raw_document, indent_level)?;
-        for element in raw_document.into_iter() {
+        Self::print_new_object_header(writer, raw_document, indent_level)?;
+        for element in raw_document {
             let (name, bson_ref) = element?;
-            self.print_debug_item(name, &bson_ref, indent_level)?;
+            Self::print_debug_item(writer, name, &bson_ref, indent_level)?;
         }
         Ok(())
     }
