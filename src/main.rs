@@ -107,8 +107,7 @@ See http://docs.mongodb.org/manual/reference/program/bsondump/ for more informat
         )
         .get_matches();
 
-    let bsonfile = matches.value_of("bsonFile");
-    let reader: Box<dyn io::BufRead> = match bsonfile {
+    let reader: Box<dyn io::BufRead> = match matches.get_one::<String>("bsonFile") {
         None => Box::new(io::BufReader::new(io::stdin())),
         Some(path) => {
             let file = fs::File::open(path)?;
@@ -116,9 +115,8 @@ See http://docs.mongodb.org/manual/reference/program/bsondump/ for more informat
         }
     };
 
-    let outfile = matches.value_of("outFile");
-    let writer: Box<dyn io::Write> = match outfile {
-        None => Box::new(std::io::stdout()), // If someone chose stdio, they probably want to see results sooner.
+    let writer: Box<dyn io::Write> = match matches.get_one::<String>("outFile") {
+        None => Box::new(io::BufWriter::new(std::io::stdout())),
         Some(path) => {
             let file = fs::File::create(path)?;
             Box::new(io::BufWriter::new(file))

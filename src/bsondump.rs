@@ -91,16 +91,6 @@ impl CountBytes for bson::RawBsonRef<'_> {
     }
 }
 
-fn pretty_json(value: &serde_json::value::Value, indent: &[u8]) -> Result<String, Box<dyn Error>> {
-    let buf = Vec::new();
-    let formatter = serde_json::ser::PrettyFormatter::with_indent(indent);
-    let mut ser = serde_json::Serializer::with_formatter(buf, formatter);
-    value.serialize(&mut ser)?;
-    let writer = ser.into_inner();
-    let json = String::from_utf8(writer)?;
-    Ok(json)
-}
-
 impl<R, W> BsonDump<R, W>
 where
     R: Read,
@@ -125,14 +115,29 @@ where
         Ok(self.num_found)
     }
 
-    fn print_json(&mut self, is_pretty: bool) -> Result<(), Box<dyn Error>> {
+    fn print_pretty_json(
+        &mut self,
+        value: serde_json::value::Value,
+        indent: &[u8],
+    ) -> Result<(), serde_json::Error>
+    where
+    {
+        let formatter = serde_json::ser::PrettyFormatter::with_indent(indent);
+        let mut ser = serde_json::Serializer::with_formatter(&mut self.writer, formatter);
+        value.serialize(&mut ser)
+    }
+
+    fn print_json(&mut self, is_pretty: bool) -> Result<(), Box<dyn Error>>
+    {
         self.num_found = 0;
         loop {
             let raw_document_buf = self.next_raw_document_buf()?;
             if raw_document_buf.is_none() {
                 break;
             }
-            let value = match bson::to_bson(&raw_document_buf.unwrap()) {
+
+            let options = bson::ser::SerializerOptions::builder().human_readable(false).build();
+            let value = match bson::to_bson_with_options(&raw_document_buf.unwrap(), options) {
                 Err(error) => {
                     if !self.objcheck {
                         continue;
@@ -141,12 +146,13 @@ where
                 }
                 Ok(value) => value,
             };
-            let json = value.into_canonical_extjson();
 
-            if !is_pretty {
-                writeln!(&mut self.writer, "{}", json)?;
+            let extjson = value.into_canonical_extjson();
+
+            if is_pretty {
+                self.print_pretty_json(extjson, b"\t")?;
             } else {
-                writeln!(&mut self.writer, "{}", pretty_json(&json, b"\t")?)?;
+                writeln!(&mut self.writer, "{}", extjson)?;
             }
             self.num_found += 1;
         }
