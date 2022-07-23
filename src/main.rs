@@ -1,12 +1,11 @@
 use std::error::Error;
-use std::fmt::Display;
 use std::fs::File;
 use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Write};
 use std::result::Result;
 
 use clap::{ArgEnum, Parser};
 
-use chrono::{offset::Local, DateTime, TimeZone};
+use log::{error, info};
 
 use bsondump::BsonDump;
 
@@ -16,18 +15,6 @@ enum OutputType {
     Debug,
     Json,
     PrettyJson,
-}
-
-fn print_num_found<Tz>(start: DateTime<Tz>, num_found: u32)
-where
-    Tz: TimeZone,
-    <Tz as TimeZone>::Offset: Display,
-{
-    eprintln!(
-        "{start}    {num_found} objects found",
-        start = start.format("%+"),
-        num_found = num_found
-    );
 }
 
 #[derive(Parser)]
@@ -70,7 +57,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let dump = BsonDump::new(reader, writer, args.objcheck);
 
-    let start = Local::now();
     let dump_result = match args.output_type {
         OutputType::Json => dump.json(),
         OutputType::PrettyJson => dump.pretty_json(),
@@ -78,11 +64,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     match dump_result {
         Err(error) => {
-            print_num_found(start, error.get_num_found());
-            eprintln!("{}", error.get_message());
+            info!(
+                "{num_found} objects found",
+                num_found = error.get_num_found()
+            );
+            error!("{}", error.get_message());
         }
         Ok(num_found) => {
-            print_num_found(start, num_found);
+            info!("{num_found} objects found", num_found = num_found);
         }
     };
 
