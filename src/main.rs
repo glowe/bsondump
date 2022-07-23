@@ -1,10 +1,11 @@
-use std::error::Error;
-use std::fs::File;
-use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Write};
-use std::result::Result;
+use std::{
+    error::Error,
+    fs::File,
+    io::{stdin, stdout, BufRead, BufReader, BufWriter, Write},
+    result::Result,
+};
 
 use clap::{ArgEnum, Parser};
-use env_logger;
 use log::{error, info};
 
 use bsondump::BsonDump;
@@ -69,10 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     match dump_result {
         Err(error) => {
-            info!(
-                "{num_found} objects found",
-                num_found = error.get_num_found()
-            );
+            info!("{num_found} objects found", num_found = error.get_num_found());
             error!("{}", error.get_message());
         }
         Ok(num_found) => {

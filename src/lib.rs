@@ -1,12 +1,12 @@
-use std::error::Error;
-use std::io::{Read, Write};
-use std::result::Result;
+use std::{
+    error::Error,
+    io::{Read, Write},
+    result::Result,
+};
 
 use bson::{RawArray, RawBsonRef, RawDocument};
 use serde::ser::Serialize;
-use serde_json::ser::PrettyFormatter;
-use serde_json::value::Value;
-use serde_json::Serializer;
+use serde_json::{ser::PrettyFormatter, value::Value, Serializer};
 
 mod iter;
 use iter::raw_document_bufs;
@@ -44,23 +44,16 @@ pub struct BsonDump<R: Read, W: Write> {
 
 impl<R: Read, W: Write> BsonDump<R, W> {
     pub fn new(reader: R, writer: W, objcheck: bool) -> Self {
-        BsonDump {
-            reader,
-            writer,
-            objcheck,
-            num_found: 0,
-        }
+        BsonDump { reader, writer, objcheck, num_found: 0 }
     }
 
     pub fn json(mut self) -> BsonDumpResult<u32> {
-        self.print_json(false)
-            .map_err(|e| self.to_bsondump_error(e))?;
+        self.print_json(false).map_err(|e| self.to_bsondump_error(e))?;
         Ok(self.num_found)
     }
 
     pub fn pretty_json(mut self) -> BsonDumpResult<u32> {
-        self.print_json(true)
-            .map_err(|e| self.to_bsondump_error(e))?;
+        self.print_json(true).map_err(|e| self.to_bsondump_error(e))?;
         Ok(self.num_found)
     }
 
@@ -72,9 +65,7 @@ impl<R: Read, W: Write> BsonDump<R, W> {
     fn print_pretty_json(writer: &mut W, value: Value, indent: &[u8]) -> DynResult<()> {
         let formatter = PrettyFormatter::with_indent(indent);
         let mut ser = Serializer::with_formatter(writer, formatter);
-        value
-            .serialize(&mut ser)
-            .map_err(|err| Box::new(err) as Box<dyn Error>)
+        value.serialize(&mut ser).map_err(|err| Box::new(err) as Box<dyn Error>)
     }
 
     fn print_json(&mut self, is_pretty: bool) -> DynResult<()> {
@@ -94,7 +85,7 @@ impl<R: Read, W: Write> BsonDump<R, W> {
 
             if is_pretty {
                 Self::print_pretty_json(&mut self.writer, extjson, b"\t")?;
-                write!(&mut self.writer, "\n")?;
+                writeln!(&mut self.writer)?;
             } else {
                 writeln!(&mut self.writer, "{}", extjson)?;
             }
@@ -164,12 +155,7 @@ impl<R: Read, W: Write> BsonDump<R, W> {
         bson_ref: &RawBsonRef,
         indent_level: usize,
     ) -> DynResult<()> {
-        writeln!(
-            writer,
-            "{indent}{name}",
-            indent = get_indent(indent_level + 2),
-            name = name,
-        )?;
+        writeln!(writer, "{indent}{name}", indent = get_indent(indent_level + 2), name = name,)?;
         let size_of_type = 1usize;
         let size_of_name = name.len() + 1; // null terminator
         let size = size_of_type + size_of_name + bson_ref.count_bytes();
@@ -193,9 +179,6 @@ impl<R: Read, W: Write> BsonDump<R, W> {
     }
 
     fn to_bsondump_error(&self, e: Box<dyn Error>) -> BsonDumpError {
-        BsonDumpError {
-            num_found: self.num_found,
-            message: e.to_string(),
-        }
+        BsonDumpError { num_found: self.num_found, message: e.to_string() }
     }
 }

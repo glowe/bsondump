@@ -1,9 +1,10 @@
 mod tests {
-    use std::io::{Read, Write};
-    use std::process::Stdio;
+    use std::{
+        io::{Read, Write},
+        process::Stdio,
+    };
 
     use tempfile::NamedTempFile;
-    use test_bin;
 
     const SAMPLE_BSON: &[u8; 283] = include_bytes!("testdata/sample.bson");
     const SAMPLE_JSON: &[u8; 575] = include_bytes!("testdata/sample.json");
@@ -19,9 +20,7 @@ mod tests {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
 
         std::thread::spawn(move || {
-            stdin
-                .write_all(SAMPLE_BSON)
-                .expect("Failed to write to stdin");
+            stdin.write_all(SAMPLE_BSON).expect("Failed to write to stdin");
         });
 
         let output = child.wait_with_output().expect("Failed to read stdout");
@@ -33,10 +32,7 @@ mod tests {
         let out_file = NamedTempFile::new().expect("Failed to create temporary out file");
 
         let mut child = test_bin::get_test_bin("bsondump")
-            .args([
-                "--outFile",
-                out_file.path().to_str().expect("Failed get path"),
-            ])
+            .args(["--outFile", out_file.path().to_str().expect("Failed get path")])
             .stdin(Stdio::piped())
             .spawn()
             .expect("failed to spawn process");
@@ -44,9 +40,7 @@ mod tests {
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
 
         std::thread::spawn(move || {
-            stdin
-                .write_all(SAMPLE_BSON)
-                .expect("Failed to write to stdin");
+            stdin.write_all(SAMPLE_BSON).expect("Failed to write to stdin");
         });
 
         child.wait().expect("Failed to write");
@@ -74,10 +68,7 @@ mod tests {
 
         let mut child = test_bin::get_test_bin("bsondump")
             .args(["tests/testdata/sample.bson"])
-            .args([
-                "--outFile",
-                out_file.path().to_str().expect("Failed get path"),
-            ])
+            .args(["--outFile", out_file.path().to_str().expect("Failed get path")])
             .spawn()
             .expect("failed to read process output");
 

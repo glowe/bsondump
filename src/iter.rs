@@ -1,6 +1,4 @@
-use std::error::Error;
-use std::io::Read;
-use std::result::Result;
+use std::{error::Error, io::Read, result::Result};
 
 use bson::RawDocumentBuf;
 
