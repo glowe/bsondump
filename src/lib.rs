@@ -94,6 +94,7 @@ impl<R: Read, W: Write> BsonDump<R, W> {
 
             if is_pretty {
                 Self::print_pretty_json(&mut self.writer, extjson, b"\t")?;
+                write!(&mut self.writer, "\n")?;
             } else {
                 writeln!(&mut self.writer, "{}", extjson)?;
             }
