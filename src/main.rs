@@ -1,63 +1,29 @@
-use clap::App;
-use clap::Arg;
-use std::error;
-use std::fmt;
-use std::fs;
-use std::io;
-use std::result;
-use std::str;
+use std::error::Error;
+use std::fs::File;
+use std::fmt::Display;
+use std::result::Result;
+use std::io::{BufRead, BufReader, BufWriter, Write, stdin, stdout};
 
-use chrono::offset::Local;
-use chrono::DateTime;
-use chrono::TimeZone;
+use clap::{ArgEnum, Parser};
+
+use chrono::{DateTime, TimeZone, offset::Local};
 
 use crate::bsondump::BsonDump;
 
-pub mod bsondump;
+mod bsondump;
 
-const DEBUG: &str = "debug";
-const JSON: &str = "json";
-const PRETTY_JSON: &str = "prettyJson";
-const DEFAULT_OUTPUT_TYPE: &str = JSON;
-
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
+#[clap(rename_all = "camelCase")]
 enum OutputType {
     Debug,
     Json,
     PrettyJson,
 }
 
-#[derive(Debug)]
-struct ParseOutputTypeError {
-    output_type: String,
-}
-
-impl fmt::Display for ParseOutputTypeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "unrecogized outputType {}", self.output_type)
-    }
-}
-
-impl error::Error for ParseOutputTypeError {}
-
-impl str::FromStr for OutputType {
-    type Err = ParseOutputTypeError;
-
-    fn from_str(s: &str) -> result::Result<Self, Self::Err> {
-        match s {
-            DEBUG => Ok(OutputType::Debug),
-            JSON => Ok(OutputType::Json),
-            PRETTY_JSON => Ok(OutputType::PrettyJson),
-            _ => Err(ParseOutputTypeError {
-                output_type: s.to_string(),
-            }),
-        }
-    }
-}
-
 fn print_num_found<Tz>(start: DateTime<Tz>, num_found: u32)
 where
     Tz: TimeZone,
-    <Tz as TimeZone>::Offset: std::fmt::Display,
+    <Tz as TimeZone>::Offset: Display,
 {
     eprintln!(
         "{start}    {num_found} objects found",
@@ -66,77 +32,53 @@ where
     );
 }
 
-fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    // TODO:
-    // - create a struct and use App to populate it properly
-    //   See https://www.fpcomplete.com/rust/command-line-parsing-clap/
-    // - refactor main into helper functions
-    // - add tests
-    let matches = App::new("bsondump")
-        .version("0.1")
-        .about(
-            "View and debug .bson files.
+#[derive(Parser)]
+#[clap(rename_all = "camelCase")]
+struct Args {
+    #[clap(value_parser)]
+    /// path to BSON file to dump to JSON; default is stdin
+    file: Option<String>,
 
-See http://docs.mongodb.org/manual/reference/program/bsondump/ for more information.",
-        )
-        .arg(
-            Arg::with_name("type")
-                .long("type")
-                .possible_values(&[DEBUG, JSON, PRETTY_JSON])
-                .takes_value(true)
-                .help(&*format!(
-                    "type of output (default '{}')",
-                    DEFAULT_OUTPUT_TYPE
-                )),
-        )
-        .arg(
-            Arg::with_name("objcheck")
-                .long("objcheck")
-                .takes_value(false)
-                .help("validate BSON during processing"),
-        )
-        .arg(
-            Arg::with_name("bsonFile")
-                .long("bsonFile")
-                .takes_value(true)
-                .help("path to BSON file to dump to JSON; default is stdin"),
-        )
-        .arg(
-            Arg::with_name("outFile")
-                .long("outFile")
-                .takes_value(true)
-                .help("path to output file to dump JSON to; default is stdout"),
-        )
-        .get_matches();
+    #[clap(name="type", long="type", arg_enum, value_parser, default_value_t = OutputType::Json)]
+    output_type: OutputType,
 
-    let reader: Box<dyn io::BufRead> = match matches.get_one::<String>("bsonFile") {
-        None => Box::new(io::BufReader::new(io::stdin())),
+    #[clap(long, value_parser, default_value_t = false)]
+    /// validate BSON during processing
+    objcheck: bool,
+
+    #[clap(long = "outFile", name = "outFile", value_parser)]
+    /// path to output file to dump JSON to; default is stdout
+    out_file: Option<String>,
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+
+    let reader: Box<dyn BufRead> = match args.file.as_deref() {
+        None => Box::new(BufReader::new(stdin())),
         Some(path) => {
-            let file = fs::File::open(path)?;
-            Box::new(io::BufReader::new(file))
+            let file = File::open(path)?;
+            Box::new(BufReader::new(file))
         }
     };
 
-    let writer: Box<dyn io::Write> = match matches.get_one::<String>("outFile") {
-        None => Box::new(io::BufWriter::new(std::io::stdout())),
+    let writer: Box<dyn Write> = match args.out_file.as_deref() {
+        None => Box::new(BufWriter::new(stdout())),
         Some(path) => {
-            let file = fs::File::create(path)?;
-            Box::new(io::BufWriter::new(file))
+            let file = File::create(path)?;
+            Box::new(BufWriter::new(file))
         }
     };
 
-    let output_type_arg = matches.value_of("type").unwrap_or(DEFAULT_OUTPUT_TYPE);
-    let output_type =
-        str::FromStr::from_str(output_type_arg).expect("output type was already validated by clap");
-    let objcheck = matches.is_present("objcheck");
-    let dump = BsonDump::new(reader, writer, objcheck);
+    let dump = BsonDump::new(reader, writer, args.objcheck);
+
     let start = Local::now();
-    let debug_result = match output_type {
+    let dump_result = match args.output_type {
         OutputType::Json => dump.json(),
         OutputType::PrettyJson => dump.pretty_json(),
         OutputType::Debug => dump.debug(),
     };
-    match debug_result {
+    match dump_result {
         Err(error) => {
             print_num_found(start, error.get_num_found());
             eprintln!("{}", error.get_message());

@@ -59,9 +59,9 @@ mod tests {
     }
 
     #[test]
-    fn from_file_with_named_argument_to_stdout() {
+    fn from_file_with_positional_argument_to_stdout() {
         let output = test_bin::get_test_bin("bsondump")
-            .args(["--bsonFile", "tests/testdata/sample.bson"])
+            .args(["tests/testdata/sample.bson"])
             .stdout(Stdio::piped())
             .output()
             .expect("failed to read process output");
@@ -70,16 +70,11 @@ mod tests {
     }
 
     #[test]
-    fn from_file_with_positional_argument_to_stdout() {
-        todo!();
-    }
-
-    #[test]
-    fn from_file_with_named_argument_to_file() {
+    fn from_file_with_positional_argument_to_file() {
         let out_file = NamedTempFile::new().expect("Failed to create temporary out file");
 
         let mut child = test_bin::get_test_bin("bsondump")
-            .args(["--bsonFile", "tests/testdata/sample.bson"])
+            .args(["tests/testdata/sample.bson"])
             .args([
                 "--outFile",
                 out_file.path().to_str().expect("Failed get path"),
@@ -96,12 +91,8 @@ mod tests {
     }
 
     #[test]
-    fn from_file_with_positional_argument_to_file() {
-        todo!();
-    }
-
-    #[test]
     fn bsondump_max_bson_size() {
         todo!();
     }
+
 }

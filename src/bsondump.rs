@@ -58,11 +58,7 @@ impl<'r, R: Read> std::iter::Iterator for RawDocumentBufs<'r, R> {
 
         let mut bytes = Vec::from(buf);
         bytes.append(&mut remainder);
-
-        match RawDocumentBuf::from_bytes(bytes) {
-            Ok(raw_document_buf) => Some(Ok(raw_document_buf)),
-            Err(error) => Some(Err(Box::new(error))),
-        }
+        Some(RawDocumentBuf::from_bytes(bytes).map_err(|e| e.into()))
     }
 }
 
@@ -143,12 +139,19 @@ impl<R: Read, W: Write> BsonDump<R, W> {
     }
 
     pub fn json(mut self) -> Result<u32, BsonDumpError> {
-        if let Err(error) = self.print_json(false) {
-            return Err(BsonDumpError {
-                num_found: self.num_found,
-                message: error.to_string(),
-            });
-        }
+        self.print_json(false)
+            .map_err(|e| self.to_bsondump_error(e))?;
+        Ok(self.num_found)
+    }
+
+    pub fn pretty_json(mut self) -> Result<u32, BsonDumpError> {
+        self.print_json(true)
+            .map_err(|e| self.to_bsondump_error(e))?;
+        Ok(self.num_found)
+    }
+
+    pub fn debug(mut self) -> Result<u32, BsonDumpError> {
+        self.print_debug().map_err(|e| self.to_bsondump_error(e))?;
         Ok(self.num_found)
     }
 
@@ -189,31 +192,17 @@ where {
         Ok(())
     }
 
-    pub fn pretty_json(mut self) -> Result<u32, BsonDumpError> {
-        if let Err(error) = self.print_json(true) {
-            return Err(BsonDumpError {
-                num_found: self.num_found,
-                message: error.to_string(),
-            });
+    fn to_bsondump_error(&self, e: Box<dyn Error>) -> BsonDumpError {
+        BsonDumpError {
+            num_found: self.num_found,
+            message: e.to_string(),
         }
-        Ok(self.num_found)
-    }
-
-    pub fn debug(mut self) -> Result<u32, BsonDumpError> {
-        if let Err(error) = self.print_debug() {
-            return Err(BsonDumpError {
-                num_found: self.num_found,
-                message: error.to_string(),
-            });
-        }
-        Ok(self.num_found)
     }
 
     fn print_debug(&mut self) -> Result<(), Box<dyn Error>> {
         self.num_found = 0;
         for raw_document_buf in raw_document_bufs(&mut self.reader) {
-            if let Err(error) =
-                Self::print_debug_document(&mut self.writer, &raw_document_buf?, 0)
+            if let Err(error) = Self::print_debug_document(&mut self.writer, &raw_document_buf?, 0)
             {
                 if !self.objcheck {
                     continue;
@@ -282,8 +271,8 @@ where {
     ) -> Result<(), Box<dyn Error>> {
         Self::print_new_object_header(writer, array, indent_level)?;
         for (i, element) in array.into_iter().enumerate() {
+            let name = i.to_string();
             let bson_ref = element?;
-            let name = format!("{}", i);
             Self::print_debug_item(writer, &name, &bson_ref, indent_level)?;
         }
         Ok(())
