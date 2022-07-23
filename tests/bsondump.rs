@@ -90,9 +90,10 @@ mod tests {
         assert_eq!(buf, SAMPLE_JSON);
     }
 
+    /* TODO
     #[test]
-    fn bsondump_max_bson_size() {
-        todo!();
+    fn max_bson_size() {
+            todo!();
     }
-
+    */
 }
