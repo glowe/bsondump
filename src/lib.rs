@@ -16,6 +16,9 @@ use iter::raw_document_bufs;
 mod bytes;
 use bytes::CountBytes;
 
+type DynResult<T> = Result<T, Box<dyn Error>>;
+type BsonDumpResult<T> = Result<T, BsonDumpError>;
+
 #[derive(Debug)]
 pub struct BsonDumpError {
     num_found: u32,
@@ -52,34 +55,32 @@ impl<R: Read, W: Write> BsonDump<R, W> {
         }
     }
 
-    pub fn json(mut self) -> Result<u32, BsonDumpError> {
+    pub fn json(mut self) -> BsonDumpResult<u32> {
         self.print_json(false)
             .map_err(|e| self.to_bsondump_error(e))?;
         Ok(self.num_found)
     }
 
-    pub fn pretty_json(mut self) -> Result<u32, BsonDumpError> {
+    pub fn pretty_json(mut self) -> BsonDumpResult<u32> {
         self.print_json(true)
             .map_err(|e| self.to_bsondump_error(e))?;
         Ok(self.num_found)
     }
 
-    pub fn debug(mut self) -> Result<u32, BsonDumpError> {
+    pub fn debug(mut self) -> BsonDumpResult<u32> {
         self.print_debug().map_err(|e| self.to_bsondump_error(e))?;
         Ok(self.num_found)
     }
 
-    fn print_pretty_json(
-        writer: &mut W,
-        value: Value,
-        indent: &[u8],
-    ) -> Result<(), serde_json::Error> {
+    fn print_pretty_json(writer: &mut W, value: Value, indent: &[u8]) -> DynResult<()> {
         let formatter = PrettyFormatter::with_indent(indent);
         let mut ser = Serializer::with_formatter(writer, formatter);
-        value.serialize(&mut ser)
+        value
+            .serialize(&mut ser)
+            .map_err(|err| Box::new(err) as Box<dyn Error>)
     }
 
-    fn print_json(&mut self, is_pretty: bool) -> Result<(), Box<dyn Error>> {
+    fn print_json(&mut self, is_pretty: bool) -> DynResult<()> {
         self.num_found = 0;
         for raw_document_buf in raw_document_bufs(&mut self.reader) {
             let value = match bson::to_bson(&raw_document_buf?) {
@@ -105,7 +106,7 @@ impl<R: Read, W: Write> BsonDump<R, W> {
         Ok(())
     }
 
-    fn print_debug(&mut self) -> Result<(), Box<dyn Error>> {
+    fn print_debug(&mut self) -> DynResult<()> {
         self.num_found = 0;
         for raw_document_buf in raw_document_bufs(&mut self.reader) {
             if let Err(error) = Self::print_debug_document(&mut self.writer, &raw_document_buf?, 0)
@@ -121,11 +122,11 @@ impl<R: Read, W: Write> BsonDump<R, W> {
         Ok(())
     }
 
-    fn print_new_object_header(
+    fn print_new_object_header<O: CountBytes + ?Sized>(
         writer: &mut W,
-        object: &(impl CountBytes + ?Sized),
+        object: &O,
         indent_level: usize,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> DynResult<()> {
         writeln!(writer, "{}--- new object ---", get_indent(indent_level))?;
         writeln!(
             writer,
@@ -136,11 +137,7 @@ impl<R: Read, W: Write> BsonDump<R, W> {
         Ok(())
     }
 
-    fn print_debug_array(
-        writer: &mut W,
-        array: &RawArray,
-        indent_level: usize,
-    ) -> Result<(), Box<dyn Error>> {
+    fn print_debug_array(writer: &mut W, array: &RawArray, indent_level: usize) -> DynResult<()> {
         Self::print_new_object_header(writer, array, indent_level)?;
         for (i, element) in array.into_iter().enumerate() {
             let name = i.to_string();
@@ -154,7 +151,7 @@ impl<R: Read, W: Write> BsonDump<R, W> {
         writer: &mut W,
         raw_document: &RawDocument,
         indent_level: usize,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> DynResult<()> {
         Self::print_new_object_header(writer, raw_document, indent_level)?;
         for element in raw_document {
             let (name, bson_ref) = element?;
@@ -168,7 +165,7 @@ impl<R: Read, W: Write> BsonDump<R, W> {
         name: &str,
         bson_ref: &RawBsonRef,
         indent_level: usize,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> DynResult<()> {
         writeln!(
             writer,
             "{indent}{name}",
