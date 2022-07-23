@@ -81,7 +81,7 @@ mod tests {
     }
 
     const SIXTEEN_KB: usize = 16 * 1024;
-    const MAX_SIZE: usize = 16 * 1024usize.pow(2) + SIXTEEN_KB;
+    const MAX_SIZE: usize = (16 * 1024 * 1024) + SIXTEEN_KB;
 
     #[test]
     fn max_bson_size() {
@@ -114,7 +114,7 @@ mod tests {
         doc.insert("name", String::from("0123456789abcdef").repeat(1024));
         doc.insert("content", bson::Binary { subtype: bson::spec::BinarySubtype::Generic, bytes });
 
-        let mut in_file = NamedTempFile::new().expect("Failed to create temporary file");
+        let in_file = NamedTempFile::new().expect("Failed to create temporary file");
         doc.to_writer(&in_file).expect("Couldn't write to bson file");
 
         let out_file = NamedTempFile::new().expect("Failed to create temporary file");

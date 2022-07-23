@@ -73,10 +73,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         OutputType::PrettyJson => dump.pretty_json(),
         OutputType::Debug => dump.debug(),
     };
+
     match dump_result {
         Err(error) => {
             info!("{num_found} objects found", num_found = error.get_num_found());
             error!("{}", error.get_message());
+            std::process::exit(1);
         }
         Ok(num_found) => {
             info!("{num_found} objects found", num_found = num_found);
