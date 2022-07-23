@@ -62,7 +62,11 @@ impl<R: Read, W: Write> BsonDump<R, W> {
         Ok(self.num_found)
     }
 
-    fn print_pretty_json(writer: &mut W, value: Value, indent: &[u8]) -> result::Result<(), serde_json::Error> {
+    fn print_pretty_json(
+        writer: &mut W,
+        value: Value,
+        indent: &[u8],
+    ) -> result::Result<(), serde_json::Error> {
         let formatter = PrettyFormatter::with_indent(indent);
         let mut ser = Serializer::with_formatter(writer, formatter);
         value.serialize(&mut ser)

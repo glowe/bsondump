@@ -48,9 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let args = Cli::parse();
 
-    env_logger::Builder::new()
-        .filter_level(args.verbose.log_level_filter())
-        .init();
+    env_logger::Builder::new().filter_level(args.verbose.log_level_filter()).init();
 
     let reader: Box<dyn BufRead> = match args.file.as_deref() {
         None => Box::new(BufReader::new(stdin())),
