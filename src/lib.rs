@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     io::{Read, Write},
-    result::Result,
+    result::{self, Result},
 };
 
 use bson::{RawArray, RawBsonRef, RawDocument};
@@ -62,10 +62,10 @@ impl<R: Read, W: Write> BsonDump<R, W> {
         Ok(self.num_found)
     }
 
-    fn print_pretty_json(writer: &mut W, value: Value, indent: &[u8]) -> DynResult<()> {
+    fn print_pretty_json(writer: &mut W, value: Value, indent: &[u8]) -> result::Result<(), serde_json::Error> {
         let formatter = PrettyFormatter::with_indent(indent);
         let mut ser = Serializer::with_formatter(writer, formatter);
-        value.serialize(&mut ser).map_err(|err| Box::new(err) as Box<dyn Error>)
+        value.serialize(&mut ser)
     }
 
     fn print_json(&mut self, is_pretty: bool) -> DynResult<()> {

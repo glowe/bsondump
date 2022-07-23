@@ -6,6 +6,7 @@ use std::{
 };
 
 use clap::{ArgEnum, Parser};
+use clap_verbosity_flag::Verbosity;
 use log::{error, info};
 
 use bsondump::BsonDump;
@@ -20,11 +21,15 @@ enum OutputType {
 
 #[derive(Parser)]
 #[clap(rename_all = "camelCase")]
-struct Args {
+struct Cli {
     /// Path to BSON file to dump to JSON; default is stdin
     file: Option<String>,
 
+    #[clap(flatten)]
+    verbose: Verbosity,
+
     #[clap(name="type", long="type", arg_enum, default_value_t = OutputType::Json)]
+    // type of output: debug, json, prettyJson
     output_type: OutputType,
 
     #[clap(long)]
@@ -37,13 +42,15 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // FIXME: add verbose
     // FIXME: add nicer error messages that don't contain
-    // Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+    //   Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }
     // FIXME: add max bson size test
-    env_logger::init();
 
-    let args = Args::parse();
+    let args = Cli::parse();
+
+    env_logger::Builder::new()
+        .filter_level(args.verbose.log_level_filter())
+        .init();
 
     let reader: Box<dyn BufRead> = match args.file.as_deref() {
         None => Box::new(BufReader::new(stdin())),

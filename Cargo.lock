@@ -76,6 +76,7 @@ version = "0.1.0"
 dependencies = [
  "bson",
  "clap",
+ "clap-verbosity-flag",
  "env_logger",
  "log",
  "serde",
@@ -105,6 +106,16 @@ dependencies = [
  "strsim",
  "termcolor",
  "textwrap",
+]
+
+[[package]]
+name = "clap-verbosity-flag"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0636f9c040082f8e161555a305f8cec1a1c2828b3d981c812b8c39f4ac00c42c"
+dependencies = [
+ "clap",
+ "log",
 ]
 
 [[package]]
