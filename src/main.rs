@@ -1,12 +1,12 @@
 use std::error::Error;
-use std::fs::File;
 use std::fmt::Display;
+use std::fs::File;
+use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Write};
 use std::result::Result;
-use std::io::{BufRead, BufReader, BufWriter, Write, stdin, stdout};
 
 use clap::{ArgEnum, Parser};
 
-use chrono::{DateTime, TimeZone, offset::Local};
+use chrono::{offset::Local, DateTime, TimeZone};
 
 use crate::bsondump::BsonDump;
 
