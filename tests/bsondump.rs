@@ -3,7 +3,6 @@ mod tests {
     use std::process::Stdio;
 
     use tempfile::NamedTempFile;
-
     use test_bin;
 
     const SAMPLE_BSON: &[u8; 283] = include_bytes!("testdata/sample.bson");

@@ -3,16 +3,13 @@ use std::io::{Read, Write};
 use std::result::Result;
 
 use bson::{RawArray, RawBsonRef, RawDocument};
-
 use serde::ser::Serialize;
-
 use serde_json::ser::PrettyFormatter;
 use serde_json::value::Value;
 use serde_json::Serializer;
 
 mod iter;
 use iter::raw_document_bufs;
-
 mod bytes;
 use bytes::CountBytes;
 

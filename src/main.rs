@@ -4,11 +4,8 @@ use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Write};
 use std::result::Result;
 
 use clap::{ArgEnum, Parser};
-
 use env_logger;
-
 use log::{error, info};
-
 
 use bsondump::BsonDump;
 
