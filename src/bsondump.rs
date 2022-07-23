@@ -1,12 +1,8 @@
 use std::error::Error;
-use std::io::Read;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::result::Result;
 
-use bson::RawArray;
-use bson::RawBsonRef;
-use bson::RawDocument;
-use bson::RawDocumentBuf;
+use bson::{RawArray, RawBsonRef, RawDocument, RawDocumentBuf};
 
 use serde::ser::Serialize;
 
