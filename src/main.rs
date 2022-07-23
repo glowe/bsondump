@@ -20,23 +20,26 @@ enum OutputType {
 #[derive(Parser)]
 #[clap(rename_all = "camelCase")]
 struct Args {
-    #[clap(value_parser)]
-    /// path to BSON file to dump to JSON; default is stdin
+    /// Path to BSON file to dump to JSON; default is stdin
     file: Option<String>,
 
-    #[clap(name="type", long="type", arg_enum, value_parser, default_value_t = OutputType::Json)]
+    #[clap(name="type", long="type", arg_enum, default_value_t = OutputType::Json)]
     output_type: OutputType,
 
-    #[clap(long, value_parser, default_value_t = false)]
-    /// validate BSON during processing
+    #[clap(long)]
+    /// Validate BSON during processing
     objcheck: bool,
 
-    #[clap(long = "outFile", name = "outFile", value_parser)]
-    /// path to output file to dump JSON to; default is stdout
+    #[clap(long = "outFile", name = "outFile")]
+    /// Path to output file to dump JSON to; default is stdout
     out_file: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // FIXME: add verbose
+    // FIXME: add nicer error messages that don't contain
+    // Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+    // FIXME: add max bson size test
     env_logger::init();
 
     let args = Args::parse();
