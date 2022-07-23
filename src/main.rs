@@ -8,9 +8,7 @@ use clap::{ArgEnum, Parser};
 
 use chrono::{offset::Local, DateTime, TimeZone};
 
-use crate::bsondump::BsonDump;
-
-mod bsondump;
+use bsondump::BsonDump;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
 #[clap(rename_all = "camelCase")]

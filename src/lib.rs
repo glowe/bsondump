@@ -2,13 +2,19 @@ use std::error::Error;
 use std::io::{Read, Write};
 use std::result::Result;
 
-use bson::{RawArray, RawBsonRef, RawDocument, RawDocumentBuf};
+use bson::{RawArray, RawBsonRef, RawDocument};
 
 use serde::ser::Serialize;
 
 use serde_json::ser::PrettyFormatter;
 use serde_json::value::Value;
 use serde_json::Serializer;
+
+mod iter;
+use iter::raw_document_bufs;
+
+mod bytes;
+use bytes::CountBytes;
 
 #[derive(Debug)]
 pub struct BsonDumpError {
@@ -25,96 +31,8 @@ impl BsonDumpError {
     }
 }
 
-pub struct RawDocumentBufs<'reader, R: Read> {
-    reader: &'reader mut R,
-}
-
-fn raw_document_bufs<R: Read>(reader: &mut R) -> RawDocumentBufs<R> {
-    RawDocumentBufs { reader }
-}
-
-impl<'r, R: Read> std::iter::Iterator for RawDocumentBufs<'r, R> {
-    type Item = Result<RawDocumentBuf, Box<dyn Error>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut buf: [u8; 4] = [0, 0, 0, 0];
-        if let Err(error) = self.reader.read_exact(&mut buf) {
-            if let std::io::ErrorKind::UnexpectedEof = error.kind() {
-                return None;
-            } else {
-                return Some(Err(Box::new(error)));
-            }
-        }
-        let length = i32::from_le_bytes(buf) as usize;
-
-        let mut remainder = vec![0u8; length - buf.len()];
-        if let Err(error) = self.reader.read_exact(&mut remainder) {
-            return Some(Err(Box::new(error)));
-        }
-
-        let mut bytes = Vec::from(buf);
-        bytes.append(&mut remainder);
-        Some(RawDocumentBuf::from_bytes(bytes).map_err(|e| e.into()))
-    }
-}
-
 fn get_indent(indent_level: usize) -> String {
     "\t".repeat(indent_level)
-}
-
-trait CountBytes {
-    fn count_bytes(&self) -> usize;
-}
-
-impl CountBytes for &str {
-    fn count_bytes(&self) -> usize {
-        // i32 size + characters + null terminator
-        4 + self.len() + 1
-    }
-}
-
-impl CountBytes for RawDocument {
-    fn count_bytes(&self) -> usize {
-        self.as_bytes().len()
-    }
-}
-
-impl CountBytes for RawArray {
-    fn count_bytes(&self) -> usize {
-        self.as_bytes().len()
-    }
-}
-
-impl CountBytes for bson::RawBsonRef<'_> {
-    fn count_bytes(&self) -> usize {
-        match self {
-            RawBsonRef::Double(_) => 8,
-            RawBsonRef::String(string) => string.count_bytes(),
-            RawBsonRef::Array(raw_array) => raw_array.count_bytes(),
-            RawBsonRef::Document(raw_document) => raw_document.count_bytes(),
-            RawBsonRef::Boolean(_) => 1,
-            RawBsonRef::Null => 0,
-            RawBsonRef::RegularExpression(regex) => {
-                regex.pattern.count_bytes() + regex.options.count_bytes()
-            }
-            RawBsonRef::JavaScriptCode(code) => code.count_bytes(),
-            RawBsonRef::JavaScriptCodeWithScope(cws) => {
-                cws.code.count_bytes() + cws.scope.count_bytes()
-            }
-            RawBsonRef::Int32(_) => 4,
-            RawBsonRef::Int64(_) => 8,
-            RawBsonRef::Timestamp(_) => 8,
-            RawBsonRef::Binary(raw_binary_ref) => 4 + 1 + raw_binary_ref.bytes.len(),
-            RawBsonRef::ObjectId(_) => 12,
-            RawBsonRef::DateTime(_) => 8,
-            RawBsonRef::Symbol(symbol) => symbol.count_bytes(),
-            RawBsonRef::Decimal128(dec) => dec.bytes().len(),
-            RawBsonRef::Undefined => 0,
-            RawBsonRef::MaxKey => 0,
-            RawBsonRef::MinKey => 0,
-            RawBsonRef::DbPointer(_) => "".count_bytes() + 12,
-        }
-    }
 }
 
 pub struct BsonDump<R: Read, W: Write> {
@@ -188,13 +106,6 @@ where {
         Ok(())
     }
 
-    fn to_bsondump_error(&self, e: Box<dyn Error>) -> BsonDumpError {
-        BsonDumpError {
-            num_found: self.num_found,
-            message: e.to_string(),
-        }
-    }
-
     fn print_debug(&mut self) -> Result<(), Box<dyn Error>> {
         self.num_found = 0;
         for raw_document_buf in raw_document_bufs(&mut self.reader) {
@@ -223,6 +134,33 @@ where {
             indent = get_indent(indent_level + 1),
             size = object.count_bytes(),
         )?;
+        Ok(())
+    }
+
+    fn print_debug_array(
+        writer: &mut W,
+        array: &RawArray,
+        indent_level: usize,
+    ) -> Result<(), Box<dyn Error>> {
+        Self::print_new_object_header(writer, array, indent_level)?;
+        for (i, element) in array.into_iter().enumerate() {
+            let name = i.to_string();
+            let bson_ref = element?;
+            Self::print_debug_item(writer, &name, &bson_ref, indent_level)?;
+        }
+        Ok(())
+    }
+
+    fn print_debug_document(
+        writer: &mut W,
+        raw_document: &RawDocument,
+        indent_level: usize,
+    ) -> Result<(), Box<dyn Error>> {
+        Self::print_new_object_header(writer, raw_document, indent_level)?;
+        for element in raw_document {
+            let (name, bson_ref) = element?;
+            Self::print_debug_item(writer, name, &bson_ref, indent_level)?;
+        }
         Ok(())
     }
 
@@ -260,30 +198,10 @@ where {
         Ok(())
     }
 
-    fn print_debug_array(
-        writer: &mut W,
-        array: &RawArray,
-        indent_level: usize,
-    ) -> Result<(), Box<dyn Error>> {
-        Self::print_new_object_header(writer, array, indent_level)?;
-        for (i, element) in array.into_iter().enumerate() {
-            let name = i.to_string();
-            let bson_ref = element?;
-            Self::print_debug_item(writer, &name, &bson_ref, indent_level)?;
+    fn to_bsondump_error(&self, e: Box<dyn Error>) -> BsonDumpError {
+        BsonDumpError {
+            num_found: self.num_found,
+            message: e.to_string(),
         }
-        Ok(())
-    }
-
-    fn print_debug_document(
-        writer: &mut W,
-        raw_document: &RawDocument,
-        indent_level: usize,
-    ) -> Result<(), Box<dyn Error>> {
-        Self::print_new_object_header(writer, raw_document, indent_level)?;
-        for element in raw_document {
-            let (name, bson_ref) = element?;
-            Self::print_debug_item(writer, name, &bson_ref, indent_level)?;
-        }
-        Ok(())
     }
 }
