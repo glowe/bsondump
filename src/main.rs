@@ -5,7 +5,10 @@ use std::result::Result;
 
 use clap::{ArgEnum, Parser};
 
+use env_logger;
+
 use log::{error, info};
+
 
 use bsondump::BsonDump;
 
@@ -37,6 +40,8 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::init();
+
     let args = Args::parse();
 
     let reader: Box<dyn BufRead> = match args.file.as_deref() {
