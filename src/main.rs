@@ -9,8 +9,6 @@ use clap::{ArgEnum, Parser};
 use clap_verbosity_flag::Verbosity;
 use log::{error, info};
 
-use bsondump::BsonDump;
-
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
 #[clap(rename_all = "camelCase")]
 enum OutputType {
@@ -41,49 +39,111 @@ struct Cli {
     out_file: Option<String>,
 }
 
+fn print_error_and_exit(num_found: u32, message: String) -> () {
+    info!("{} objects found", num_found);
+    error!("{}", message);
+    std::process::exit(1);
+}
+
+fn print_json<W: Write>(writer: &mut W, raw_doc_buf: &bson::RawDocumentBuf, num_found: u32, pretty: bool, exit_on_error: bool)  {
+    let result = bsondump::to_canonical_extjson_value(&raw_doc_buf);
+    if let Err(err) = result {
+        if exit_on_error {
+            print_error_and_exit(num_found, format!("{}", err));
+        }
+        return;
+    }
+    let value = result.unwrap();
+
+    if !pretty {
+        if let Err(err) = writeln!(writer, "{}", value) {
+            print_error_and_exit(num_found, format!("{}", err));
+        }
+        return;
+    }
+
+    let result = bsondump::to_pretty_string(&value);
+    if let Err(err) = result {
+        if exit_on_error {
+            print_error_and_exit(num_found, format!("{}", err));
+        }
+        return;
+    }
+    let value = result.unwrap(); // no error here
+
+    if let Err(err) = writeln!(writer, "{}", value) {
+        print_error_and_exit(num_found, format!("{}", err));
+    }
+
+    if let Err(err) = writer.flush() {
+        print_error_and_exit(num_found, format!("{}", err));
+    }
+}
+
+
 fn main() -> Result<(), Box<dyn Error>> {
-    // FIXME: add nicer error messages that don't contain
-    //   Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }
-    // FIXME: add max bson size test
+    let cli = Cli::parse();
 
-    let args = Cli::parse();
+    env_logger::Builder::new().filter_level(cli.verbose.log_level_filter()).init();
 
-    env_logger::Builder::new().filter_level(args.verbose.log_level_filter()).init();
-
-    let reader: Box<dyn BufRead> = match args.file.as_deref() {
+    let mut reader: Box<dyn BufRead> = match cli.file.as_deref() {
         None => Box::new(BufReader::new(stdin())),
         Some(path) => {
-            let file = File::open(path)?;
-            Box::new(BufReader::new(file))
+            match File::open(path) {
+                Err(err) => {
+                    error!("Failed to open {path} for reading. {err}", path=path, err=err);
+                    std::process::exit(1);
+                },
+                Ok(file) => Box::new(BufReader::new(file))
+            }
         }
     };
 
-    let writer: Box<dyn Write> = match args.out_file.as_deref() {
+    let mut writer: Box<dyn Write> = match cli.out_file.as_deref() {
         None => Box::new(BufWriter::new(stdout())),
         Some(path) => {
-            let file = File::create(path)?;
-            Box::new(BufWriter::new(file))
+            match File::create(path) {
+                Err(err) => {
+                    error!("Failed to create {path} for writing. {err}", path=path, err=err);
+                    std::process::exit(1);
+                },
+                Ok(file) => Box::new(BufWriter::new(file))
+            }
         }
     };
 
-    let dump = BsonDump::new(reader, writer, args.objcheck);
+    let mut num_found = 0;
+    for result in bsondump::docbytes::source(& mut reader) {
+        let bson_bytes = result?;
 
-    let dump_result = match args.output_type {
-        OutputType::Json => dump.json(),
-        OutputType::PrettyJson => dump.pretty_json(),
-        OutputType::Debug => dump.debug(),
-    };
+        // if error break out
+        let raw_doc_buf = bson::RawDocumentBuf::from_bytes(bson_bytes.bytes)?;
 
-    match dump_result {
-        Err(error) => {
-            info!("{num_found} objects found", num_found = error.get_num_found());
-            error!("{}", error.get_message());
-            std::process::exit(1);
-        }
-        Ok(num_found) => {
-            info!("{num_found} objects found", num_found = num_found);
-        }
-    };
+        match cli.output_type {
+            OutputType::Json => {
+                print_json(& mut writer, &raw_doc_buf, num_found, false, cli.objcheck);
+            },
+            OutputType::PrettyJson => {
+                print_json(& mut writer, &raw_doc_buf, num_found, true, cli.objcheck);
+            },
+            OutputType::Debug => {
+                let result = bsondump::debug(&raw_doc_buf);
+                if let Err(ref err) = result {
+                    print_error_and_exit(num_found, format!("{}", err));
+                }
+                let value = result.unwrap();
+                if let Err(err) = writeln!(writer, "{}", value) {
+                    print_error_and_exit(num_found, format!("{}", err));
+                }
+                if let Err(err) = writer.flush() {
+                    print_error_and_exit(num_found, format!("{}", err));
+                }
+            },
+        };
+
+        num_found += 1;
+    }
+    info!("{} objects found", num_found);
 
     Ok(())
 }
