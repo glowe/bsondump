@@ -39,14 +39,14 @@ struct Cli {
     out_file: Option<String>,
 }
 
-fn print_error_and_exit(num_found: u32, message: String) -> () {
+fn print_error_and_exit(num_found: u32, message: String) {
     info!("{} objects found", num_found);
     error!("{}", message);
     std::process::exit(1);
 }
 
 fn print_json<W: Write>(writer: &mut W, raw_doc_buf: &bson::RawDocumentBuf, num_found: u32, pretty: bool, exit_on_error: bool)  {
-    let result = bsondump::to_canonical_extjson_value(&raw_doc_buf);
+    let result = bsondump::to_canonical_extjson_value(raw_doc_buf);
     if let Err(err) = result {
         if exit_on_error {
             print_error_and_exit(num_found, format!("{}", err));
