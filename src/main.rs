@@ -55,7 +55,7 @@ fn print_json<W: Write>(
     let result = bsondump::to_canonical_extjson_value(raw_doc_buf);
     if let Err(err) = result {
         if exit_on_error {
-            print_error_and_exit(num_found, format!("{}", err));
+            print_error_and_exit(num_found, format!("Failed to convert to canonical extended json: {}", err));
         }
         return;
     }
@@ -115,10 +115,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut num_found = 0;
     for result in bsondump::docbytes::source(&mut reader) {
-        let bson_bytes = result?;
+        if let Err(ref err) = result {
+            print_error_and_exit(num_found, format!("{}", err));
+        }
+        let bson_bytes = result.unwrap();  // No error here
 
-        // if error break out
-        let raw_doc_buf = bson::RawDocumentBuf::from_bytes(bson_bytes.bytes)?;
+        let result = bson::RawDocumentBuf::from_bytes(bson_bytes.bytes);
+        if let Err(ref err) = result {
+            print_error_and_exit(num_found, format!("{}", err));
+        }
+        let raw_doc_buf = result.unwrap(); // No error here
 
         match cli.output_type {
             OutputType::Json => {

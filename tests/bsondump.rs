@@ -1,9 +1,12 @@
+// These tests are ported almost directly from the original bsondump Go implementation
+
 mod tests {
     use std::{
         io::{Read, Write},
         process::Stdio,
     };
 
+    use rand::Rng;
     use tempfile::NamedTempFile;
 
     const SAMPLE_BSON: &[u8; 283] = include_bytes!("testdata/sample.bson");
@@ -85,16 +88,20 @@ mod tests {
 
     #[test]
     fn max_bson_size() {
-        assert!(run_with_bson_size(MAX_SIZE));
+        let output = run_with_bson_size(MAX_SIZE);
+        assert!(output.status.success());
     }
 
     #[test]
     fn more_than_max_bson_size() {
-        assert!(!run_with_bson_size(MAX_SIZE + 1));
+        let output = run_with_bson_size(MAX_SIZE + 1);
+        assert!(!output.status.success());
+        assert!(String::from_utf8(output.stderr).unwrap().ends_with(
+            "invalid BSONSize: 16793601 bytes is larger than than maximum of 16793600 bytes\n")
+        );
     }
 
-    fn run_with_bson_size(size: usize) -> bool {
-        use rand::Rng;
+    fn run_with_bson_size(size: usize) -> std::process::Output {
         let binary_size: usize = size
             - SIXTEEN_KB // Subtract 16kb for the string field's data.
             - 4          // Subtract 4 bytes for the int32 at the head of the document that specifies its size.
@@ -119,7 +126,7 @@ mod tests {
 
         let out_file = NamedTempFile::new().expect("Failed to create temporary file");
 
-        let output = test_bin::get_test_bin("bsondump")
+        test_bin::get_test_bin("bsondump")
             .args([
                 in_file.path().to_str().expect("Failed get path"),
                 "--outFile",
@@ -127,8 +134,6 @@ mod tests {
             ])
             .stdout(Stdio::piped())
             .output()
-            .expect("Failed to collect process output");
-
-        output.status.success()
+            .expect("Failed to collect process output")
     }
 }
