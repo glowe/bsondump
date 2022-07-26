@@ -45,7 +45,13 @@ fn print_error_and_exit(num_found: u32, message: String) {
     std::process::exit(1);
 }
 
-fn print_json<W: Write>(writer: &mut W, raw_doc_buf: &bson::RawDocumentBuf, num_found: u32, pretty: bool, exit_on_error: bool)  {
+fn print_json<W: Write>(
+    writer: &mut W,
+    raw_doc_buf: &bson::RawDocumentBuf,
+    num_found: u32,
+    pretty: bool,
+    exit_on_error: bool,
+) {
     let result = bsondump::to_canonical_extjson_value(raw_doc_buf);
     if let Err(err) = result {
         if exit_on_error {
@@ -80,7 +86,6 @@ fn print_json<W: Write>(writer: &mut W, raw_doc_buf: &bson::RawDocumentBuf, num_
     }
 }
 
-
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
@@ -88,32 +93,28 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut reader: Box<dyn BufRead> = match cli.file.as_deref() {
         None => Box::new(BufReader::new(stdin())),
-        Some(path) => {
-            match File::open(path) {
-                Err(err) => {
-                    error!("Failed to open {path} for reading. {err}", path=path, err=err);
-                    std::process::exit(1);
-                },
-                Ok(file) => Box::new(BufReader::new(file))
+        Some(path) => match File::open(path) {
+            Err(err) => {
+                error!("Failed to open {path} for reading. {err}", path = path, err = err);
+                std::process::exit(1);
             }
-        }
+            Ok(file) => Box::new(BufReader::new(file)),
+        },
     };
 
     let mut writer: Box<dyn Write> = match cli.out_file.as_deref() {
         None => Box::new(BufWriter::new(stdout())),
-        Some(path) => {
-            match File::create(path) {
-                Err(err) => {
-                    error!("Failed to create {path} for writing. {err}", path=path, err=err);
-                    std::process::exit(1);
-                },
-                Ok(file) => Box::new(BufWriter::new(file))
+        Some(path) => match File::create(path) {
+            Err(err) => {
+                error!("Failed to create {path} for writing. {err}", path = path, err = err);
+                std::process::exit(1);
             }
-        }
+            Ok(file) => Box::new(BufWriter::new(file)),
+        },
     };
 
     let mut num_found = 0;
-    for result in bsondump::docbytes::source(& mut reader) {
+    for result in bsondump::docbytes::source(&mut reader) {
         let bson_bytes = result?;
 
         // if error break out
@@ -121,11 +122,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         match cli.output_type {
             OutputType::Json => {
-                print_json(& mut writer, &raw_doc_buf, num_found, false, cli.objcheck);
-            },
+                print_json(&mut writer, &raw_doc_buf, num_found, false, cli.objcheck);
+            }
             OutputType::PrettyJson => {
-                print_json(& mut writer, &raw_doc_buf, num_found, true, cli.objcheck);
-            },
+                print_json(&mut writer, &raw_doc_buf, num_found, true, cli.objcheck);
+            }
             OutputType::Debug => {
                 let result = bsondump::debug(&raw_doc_buf);
                 if let Err(ref err) = result {
@@ -138,7 +139,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 if let Err(err) = writer.flush() {
                     print_error_and_exit(num_found, format!("{}", err));
                 }
-            },
+            }
         };
 
         num_found += 1;
